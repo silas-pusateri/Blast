@@ -9,6 +9,8 @@ import SwiftUI
 import AVFoundation
 import PhotosUI
 import FirebaseAuth
+import FirebaseStorage
+import FirebaseFirestore
 import os
 
 struct LoginView: View {
@@ -150,6 +152,7 @@ struct LoginView: View {
 struct ContentView: View {
     @EnvironmentObject private var authState: AuthenticationState
     @State private var showingUploadView = false
+    @State private var isRefreshing = false
     
     var body: some View {
         if !authState.isSignedIn {
@@ -159,11 +162,20 @@ struct ContentView: View {
             ZStack(alignment: .topTrailing) {
                 GeometryReader { geometry in
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(0..<5) { index in
-                                VideoView(index: index)
-                                    .frame(width: geometry.size.width,
-                                           height: geometry.size.height)
+                        RefreshableView(
+                            isRefreshing: $isRefreshing,
+                            onRefresh: {
+                                // Simulate refresh delay
+                                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                isRefreshing = false
+                            }
+                        ) {
+                            LazyVStack(spacing: 0) {
+                                ForEach(0..<5) { index in
+                                    VideoView(index: index)
+                                        .frame(width: geometry.size.width,
+                                               height: geometry.size.height)
+                                }
                             }
                         }
                     }
@@ -190,6 +202,72 @@ struct ContentView: View {
                 UploadView()
             }
         }
+    }
+}
+
+// Custom RefreshableView implementation
+struct RefreshableView<Content: View>: View {
+    @Binding var isRefreshing: Bool
+    let onRefresh: () async throws -> Void
+    let content: Content
+    @State private var offset: CGFloat = 0
+    private let threshold: CGFloat = 50
+    
+    init(
+        isRefreshing: Binding<Bool>,
+        onRefresh: @escaping () async throws -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self._isRefreshing = isRefreshing
+        self.onRefresh = onRefresh
+        self.content = content()
+    }
+    
+    var body: some View {
+        ZStack(alignment: .top) {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: OffsetPreferenceKey.self,
+                    value: geometry.frame(in: .named("scrollView")).minY
+                )
+            }
+            .frame(height: 0)
+            
+            content
+        }
+        .coordinateSpace(name: "scrollView")
+        .onPreferenceChange(OffsetPreferenceKey.self) { offset in
+            self.offset = offset
+            
+            if offset > threshold && !isRefreshing {
+                isRefreshing = true
+                Task {
+                    try? await onRefresh()
+                }
+            }
+        }
+        .overlay(alignment: .top) {
+            if isRefreshing {
+                ProgressView()
+                    .tint(.white)
+                    .frame(height: 50)
+            } else if offset > 0 {
+                // Pull indicator
+                Image(systemName: "arrow.down")
+                    .foregroundColor(.white)
+                    .frame(height: 50)
+                    .opacity(Double(min(offset / threshold, 1.0)))
+                    .rotationEffect(.degrees(Double(min((offset / threshold) * 180, 180))))
+            }
+        }
+    }
+}
+
+// Preference key for tracking scroll offset
+private struct OffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -437,6 +515,9 @@ struct UploadView: View {
     @State private var isGeneratingCaption = false
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var isLoadingVideo = false
+    @State private var isUploading = false
+    @State private var uploadProgress: Double = 0
+    @State private var errorMessage: String?
     
     // Sample AI-generated captions
     let aiCaptions = [
@@ -454,6 +535,80 @@ struct UploadView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             caption = aiCaptions.randomElement() ?? ""
             isGeneratingCaption = false
+        }
+    }
+    
+    private func uploadVideo() {
+        guard let videoURL = selectedVideo else { return }
+        isUploading = true
+        errorMessage = nil
+        
+        // Create a unique filename
+        let filename = "\(UUID().uuidString).mov"
+        let storageRef = Storage.storage().reference().child("videos/\(filename)")
+        
+        // Create metadata
+        let metadata = StorageMetadata()
+        metadata.contentType = "video/quicktime"
+        
+        // Start upload task
+        let uploadTask = storageRef.putFile(from: videoURL, metadata: metadata)
+        
+        // Monitor upload progress
+        uploadTask.observe(.progress) { snapshot in
+            let percentComplete = Double(snapshot.progress?.completedUnitCount ?? 0) / Double(snapshot.progress?.totalUnitCount ?? 1)
+            DispatchQueue.main.async {
+                uploadProgress = percentComplete
+            }
+        }
+        
+        // Handle upload completion
+        uploadTask.observe(.success) { _ in
+            // Get download URL
+            storageRef.downloadURL { url, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        errorMessage = "Failed to get download URL: \(error.localizedDescription)"
+                        isUploading = false
+                        return
+                    }
+                    
+                    guard let downloadURL = url else {
+                        errorMessage = "Failed to get download URL"
+                        isUploading = false
+                        return
+                    }
+                    
+                    // Save video metadata to Firestore
+                    let db = Firestore.firestore()
+                    let videoData: [String: Any] = [
+                        "userId": Auth.auth().currentUser?.uid ?? "",
+                        "caption": caption,
+                        "videoUrl": downloadURL.absoluteString,
+                        "timestamp": FieldValue.serverTimestamp(),
+                        "likes": 0,
+                        "comments": 0
+                    ]
+                    
+                    db.collection("videos").addDocument(data: videoData) { error in
+                        DispatchQueue.main.async {
+                            isUploading = false
+                            if let error = error {
+                                errorMessage = "Failed to save video metadata: \(error.localizedDescription)"
+                            } else {
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        uploadTask.observe(.failure) { snapshot in
+            DispatchQueue.main.async {
+                isUploading = false
+                errorMessage = snapshot.error?.localizedDescription ?? "Upload failed"
+            }
         }
     }
     
@@ -572,21 +727,38 @@ struct UploadView: View {
                     }
                 }
                 
-                // Upload button
-                Button(action: {
-                    // Handle upload logic
-                    dismiss()
-                }) {
-                    Text("Upload")
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(selectedVideo != nil ? Color.blue : Color.gray)
-                        .cornerRadius(25)
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
                         .padding(.horizontal)
                 }
-                .disabled(selectedVideo == nil)
+                
+                // Upload button with progress
+                Button(action: {
+                    uploadVideo()
+                }) {
+                    ZStack {
+                        if isUploading {
+                            ProgressView(value: uploadProgress) {
+                                Text("Uploading... \(Int(uploadProgress * 100))%")
+                                    .foregroundColor(.white)
+                            }
+                            .progressViewStyle(LinearProgressViewStyle(tint: .white))
+                            .padding(.horizontal)
+                        } else {
+                            Text("Upload")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(selectedVideo != nil ? Color.blue : Color.gray)
+                    .cornerRadius(25)
+                    .padding(.horizontal)
+                }
+                .disabled(selectedVideo == nil || isUploading)
                 
                 Spacer()
             }
@@ -607,7 +779,7 @@ struct UploadView: View {
         .onChange(of: photoPickerItem) { oldValue, newValue in
             Task {
                 isLoadingVideo = true
-                if let videoData = try? await newValue?.loadTransferable(type: VideoData.self) {
+                if let videoData = try? await newValue?.loadTransferable(type: VideoTransferData.self) {
                     let fileName = "\(UUID().uuidString).mov"
                     let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
                     try? videoData.data.write(to: fileURL)
@@ -656,15 +828,6 @@ struct VideoPlayerUIView: UIViewRepresentable {
     }
 }
 
-struct VideoData: Transferable {
-    let data: Data
-    
-    static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(importedContentType: .movie) { data in
-            VideoData(data: data)
-        }
-    }
-}
 
 struct CameraView: View {
     @Environment(\.dismiss) var dismiss

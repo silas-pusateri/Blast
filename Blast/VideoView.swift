@@ -1,120 +1,209 @@
 import SwiftUI
 import AVKit
+import FirebaseFirestore
+import FirebaseStorage
+
 
 struct VideoView: View {
     let index: Int
     @State private var isShowingComments = false
     @State private var isLiked = false
-    @State private var likes = Int.random(in: 100...10000)
-    private let player: AVPlayer
+    @State private var likes = 0
+    @State private var videoData: VideoData?
+    @State private var player: AVPlayer?
+    @State private var isLoading = true
+    @State private var errorMessage: String?
     
     init(index: Int) {
         self.index = index
-        // Use local video from bundle
-        if let videoURL = Bundle.main.url(forResource: "video\(index + 1)", withExtension: "mp4") {
-            self.player = AVPlayer(url: videoURL)
-        } else {
-            // Fallback to a default video if the numbered video isn't found
-            let defaultURL = Bundle.main.url(forResource: "video1", withExtension: "mp4") ?? 
-                           URL(string: "about:blank")!
-            self.player = AVPlayer(url: defaultURL)
-            print("⚠️ Could not find video\(index + 1).mp4, using fallback")
-        }
+    }
+    
+    private func loadVideo() {
+        let db = Firestore.firestore()
+        
+        db.collection("videos")
+            .order(by: "timestamp", descending: true)
+            .limit(to: index + 1)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        errorMessage = "Error loading video: \(error.localizedDescription)"
+                        isLoading = false
+                    }
+                    return
+                }
+                
+                guard let documents = snapshot?.documents,
+                      index < documents.count else {
+                    DispatchQueue.main.async {
+                        errorMessage = "No video found"
+                        isLoading = false
+                    }
+                    return
+                }
+                
+                let document = documents[index]
+                
+                // Create decoder with document path
+                let decoder = Firestore.Decoder()
+                decoder.userInfo[.documentPath] = document.reference.path
+                
+                do {
+                    let data = try document.data(as: VideoData.self, decoder: decoder)
+                    guard let videoURL = URL(string: data.videoUrl) else {
+                        DispatchQueue.main.async {
+                            errorMessage = "Invalid video URL"
+                            isLoading = false
+                        }
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self.videoData = data
+                        self.likes = data.likes
+                        self.player = AVPlayer(url: videoURL)
+                        self.isLoading = false
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        errorMessage = "Error decoding video data: \(error.localizedDescription)"
+                        isLoading = false
+                    }
+                }
+            }
     }
     
     var body: some View {
         ZStack {
             Color.black
             
-            AVPlayerControllerRepresented(player: player)
-                .disabled(true)
-                .onAppear {
-                    // Start playing when view appears
-                    player.seek(to: .zero)
-                    player.play()
-                    
-                    // Setup video looping
-                    NotificationCenter.default.addObserver(
-                        forName: .AVPlayerItemDidPlayToEndTime,
-                        object: player.currentItem,
-                        queue: .main) { _ in
-                            player.seek(to: .zero)
-                            player.play()
-                        }
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+            } else if let error = errorMessage {
+                VStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundColor(.white)
+                    Text(error)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding()
                 }
-                .onDisappear {
-                    // Cleanup when view disappears
-                    player.pause()
-                    NotificationCenter.default.removeObserver(
-                        self,
-                        name: .AVPlayerItemDidPlayToEndTime,
-                        object: player.currentItem
-                    )
-                }
-            
-            VStack {
-                Spacer()
-                
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("@username\(index)")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Video caption goes here #viral #trending")
-                            .font(.system(size: 14, weight: .regular))
-                            .lineLimit(2)
+            } else if let player = player {
+                AVPlayerControllerRepresented(player: player)
+                    .disabled(true)
+                    .onAppear {
+                        // Start playing when view appears
+                        player.seek(to: .zero)
+                        player.play()
+                        
+                        // Setup video looping
+                        NotificationCenter.default.addObserver(
+                            forName: .AVPlayerItemDidPlayToEndTime,
+                            object: player.currentItem,
+                            queue: .main) { _ in
+                                player.seek(to: .zero)
+                                player.play()
+                            }
                     }
-                    .foregroundColor(.white)
-                    
+                    .onDisappear {
+                        // Cleanup when view disappears
+                        player.pause()
+                        NotificationCenter.default.removeObserver(
+                            self,
+                            name: .AVPlayerItemDidPlayToEndTime,
+                            object: player.currentItem
+                        )
+                    }
+                
+                // Video overlay content
+                VStack {
                     Spacer()
                     
-                    VStack(spacing: 20) {
-                        Button(action: {
-                            isLiked.toggle()
-                            likes += isLiked ? 1 : -1
-                        }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: isLiked ? "heart.fill" : "heart")
-                                    .foregroundColor(isLiked ? .red : .white)
-                                    .font(.system(size: 26))
-                                Text("\(likes)")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 12))
-                            }
+                    HStack(alignment: .bottom) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(videoData?.userId ?? "unknown")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text(videoData?.caption ?? "")
+                                .font(.system(size: 14, weight: .regular))
+                                .lineLimit(2)
                         }
+                        .foregroundColor(.white)
                         
-                        Button(action: {
-                            isShowingComments = true
-                        }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "bubble.right")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 26))
-                                Text("\(Int.random(in: 10...1000))")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 12))
-                            }
-                        }
+                        Spacer()
                         
-                        Button(action: {
-                            // Share action
-                        }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "arrowshape.turn.up.right")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 26))
-                                Text("Share")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 12))
+                        VStack(spacing: 20) {
+                            Button(action: {
+                                isLiked.toggle()
+                                likes += isLiked ? 1 : -1
+                                // Update likes in Firestore
+                                if let videoData = videoData {
+                                    let db = Firestore.firestore()
+                                    db.collection("videos").document(videoData.id)
+                                        .updateData(["likes": likes])
+                                }
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                                        .foregroundColor(isLiked ? .red : .white)
+                                        .font(.system(size: 26))
+                                    Text("\(likes)")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 12))
+                                }
+                            }
+                            
+                            Button(action: {
+                                isShowingComments = true
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "bubble.right")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 26))
+                                    Text("\(videoData?.comments ?? 0)")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 12))
+                                }
+                            }
+                            
+                            Button(action: {
+                                // Share action
+                                if let videoUrl = videoData?.videoUrl {
+                                    let activityViewController = UIActivityViewController(
+                                        activityItems: [URL(string: videoUrl)!],
+                                        applicationActivities: nil
+                                    )
+                                    
+                                    // Present the share sheet
+                                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                       let window = windowScene.windows.first,
+                                       let rootViewController = window.rootViewController {
+                                        rootViewController.present(activityViewController, animated: true)
+                                    }
+                                }
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "arrowshape.turn.up.right")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 26))
+                                    Text("Share")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 12))
+                                }
                             }
                         }
+                        .padding(.bottom, 20)
                     }
-                    .padding(.bottom, 20)
+                    .padding()
                 }
-                .padding()
             }
         }
         .sheet(isPresented: $isShowingComments) {
-            CommentView(commentCount: Int.random(in: 1...20))
+            CommentView(commentCount: videoData?.comments ?? 0)
+        }
+        .onAppear {
+            loadVideo()
         }
     }
 }
