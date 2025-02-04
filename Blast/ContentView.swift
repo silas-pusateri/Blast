@@ -12,6 +12,7 @@ import FirebaseAuth
 import FirebaseStorage
 import FirebaseFirestore
 import os
+import AVKit
 
 struct LoginView: View {
     @EnvironmentObject private var authState: AuthenticationState
@@ -149,8 +150,54 @@ struct LoginView: View {
     }
 }
 
+// Add this class to manage video data
+class VideoViewModel: ObservableObject {
+    @Published var videos: [Video] = []
+    @Published var isLoading = false
+    
+    @MainActor
+    func fetchVideos() async {
+        isLoading = true
+        // Fetch videos from Firestore
+        let db = Firestore.firestore()
+        do {
+            let querySnapshot = try await db.collection("videos")
+                .order(by: "timestamp", descending: true)
+                .limit(to: 10)
+                .getDocuments()
+            
+            self.videos = querySnapshot.documents.compactMap { document -> Video? in
+                let data = document.data()
+                return Video(
+                    id: document.documentID,
+                    url: data["videoUrl"] as? String ?? "",
+                    caption: data["caption"] as? String ?? "",
+                    userId: data["userId"] as? String ?? "",
+                    likes: data["likes"] as? Int ?? 0,
+                    comments: data["comments"] as? Int ?? 0
+                )
+            }
+            self.isLoading = false
+        } catch {
+            print("Error fetching videos: \(error)")
+            self.isLoading = false
+        }
+    }
+}
+
+// Add this struct to represent video data
+struct Video: Identifiable {
+    let id: String
+    let url: String
+    let caption: String
+    let userId: String
+    let likes: Int
+    let comments: Int
+}
+
 struct ContentView: View {
     @EnvironmentObject private var authState: AuthenticationState
+    @StateObject private var videoViewModel = VideoViewModel()
     @State private var showingUploadView = false
     @State private var isRefreshing = false
     
@@ -165,13 +212,12 @@ struct ContentView: View {
                         RefreshableView(
                             isRefreshing: $isRefreshing,
                             onRefresh: {
-                                // Simulate refresh delay
-                                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                await videoViewModel.fetchVideos()
                                 isRefreshing = false
                             }
                         ) {
                             LazyVStack(spacing: 0) {
-                                ForEach(0..<5) { index in
+                                ForEach(0..<videoViewModel.videos.count, id: \.self) { index in
                                     VideoView(index: index)
                                         .frame(width: geometry.size.width,
                                                height: geometry.size.height)
@@ -182,24 +228,49 @@ struct ContentView: View {
                     .scrollTargetBehavior(.paging)
                 }
                 
-                // Upload button
-                Button(action: {
-                    showingUploadView = true
-                }) {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
+                // Top buttons container
+                HStack {
+                    // Refresh button
+                    Button(action: {
+                        isRefreshing = true
+                        Task {
+                            await videoViewModel.fetchVideos()
+                            isRefreshing = false
+                        }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    
+                    Spacer()
+                    
+                    // Upload button
+                    Button(action: {
+                        showingUploadView = true
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
                 }
                 .padding(.top, 60)
-                .padding(.trailing, 16)
+                .padding(.horizontal, 16)
             }
             .edgesIgnoringSafeArea(.all)
             .sheet(isPresented: $showingUploadView) {
                 UploadView()
+            }
+            .task {
+                await videoViewModel.fetchVideos()
             }
         }
     }
@@ -506,8 +577,109 @@ struct ReplyRow: View {
     }
 }
 
+/// Separate small subview to choose source (camera/gallery).
+struct VideoSourceSelectionView: View {
+    @Binding var showingCameraView: Bool
+    @Binding var photoPickerItem: PhotosPickerItem?
+    
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 20) {
+                Image(systemName: "video.badge.plus")
+                    .font(.system(size: 40))
+                    .foregroundColor(.gray)
+                    .padding(.top, geometry.size.height * 0.15)
+                
+                Text("Choose video source")
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                HStack(spacing: 20) {
+                    // Camera Button
+                    Button(action: {
+                        showingCameraView = true
+                    }) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 32))
+                            Text("Record")
+                                .font(.subheadline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: 140, height: 140)
+                        .background(Color.blue)
+                        .cornerRadius(16)
+                    }
+                    
+                    // Gallery Button
+                    PhotosPicker(
+                        selection: $photoPickerItem,
+                        matching: .videos,
+                        photoLibrary: .shared()
+                    ) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 32))
+                            Text("Gallery")
+                                .font(.subheadline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: 140, height: 140)
+                        .background(Color.green)
+                        .cornerRadius(16)
+                    }
+                }
+                .padding(.bottom, geometry.size.height * 0.2)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+struct VideoPreviewArea: View {
+    @Binding var selectedVideo: URL?
+    @Binding var isLoadingVideo: Bool
+    @Binding var showingCameraView: Bool
+    @Binding var photoPickerItem: PhotosPickerItem?
+    @State private var player: AVPlayer?
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.2))
+                .aspectRatio(9/16, contentMode: .fit)
+                .padding(.horizontal)
+            
+            if isLoadingVideo {
+                ProgressView("Loading video...")
+            } else if let videoURL = selectedVideo {
+                VideoPlayer(player: AVPlayer(url: videoURL))
+                    .aspectRatio(9/16, contentMode: .fit)
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .onAppear {
+                        // Create and store player when view appears
+                        player = AVPlayer(url: videoURL)
+                        player?.play()
+                    }
+                    .onDisappear {
+                        // Cleanup player when view disappears
+                        player?.pause()
+                        player = nil
+                    }
+            } else {
+                // If no video selected, show the source selection UI
+                VideoSourceSelectionView(showingCameraView: $showingCameraView, photoPickerItem: $photoPickerItem)
+            }
+        }
+    }
+}
+
 struct UploadView: View {
     @Environment(\.dismiss) var dismiss
+    
+    // MARK: - State
     @State private var selectedVideo: URL?
     @State private var showingVideoPicker = false
     @State private var showingCameraView = false
@@ -525,8 +697,77 @@ struct UploadView: View {
         "🔥 Watch until the end! You won't believe what happens",
         "This moment was too good not to share 😊 #memories",
         "POV: When the weekend finally arrives 🎉",
-        "Drop a ❤️ if you relate to this!",
+        "Drop a ❤️ if you relate to this!"
     ]
+    
+    // MARK: - Body
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                
+                // 1) Video preview / selection area
+                VideoPreviewArea(
+                    selectedVideo: $selectedVideo,
+                    isLoadingVideo: $isLoadingVideo,
+                    showingCameraView: $showingCameraView,
+                    photoPickerItem: $photoPickerItem
+                )
+                
+                // 2) Caption input (with AI generation)
+                CaptionInputSection(
+                    caption: $caption,
+                    isGeneratingCaption: $isGeneratingCaption,
+                    generateAICaption: generateAICaption
+                )
+                
+                // Show any errors
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding(.horizontal)
+                }
+                
+                // 3) Upload button with progress
+                UploadProgressButton(
+                    selectedVideo: $selectedVideo,
+                    isUploading: $isUploading,
+                    uploadProgress: $uploadProgress,
+                    action: uploadVideo
+                )
+                
+                Spacer()
+            }
+            .padding(.top)
+            .navigationTitle("New Post")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showingCameraView) {
+            CameraView(selectedVideo: $selectedVideo)
+        }
+        .onChange(of: photoPickerItem) { oldValue, newValue in
+            Task {
+                isLoadingVideo = true
+                if let newValue, 
+                   let videoData = try? await newValue.loadTransferable(type: VideoTransferData.self) {
+                    let fileName = "\(UUID().uuidString).mov"
+                    let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                    try? videoData.data.write(to: fileURL)
+                    selectedVideo = fileURL
+                }
+                isLoadingVideo = false
+            }
+        }
+    }
+    
+    // MARK: - Functions
     
     func generateAICaption() {
         isGeneratingCaption = true
@@ -556,7 +797,8 @@ struct UploadView: View {
         
         // Monitor upload progress
         uploadTask.observe(.progress) { snapshot in
-            let percentComplete = Double(snapshot.progress?.completedUnitCount ?? 0) / Double(snapshot.progress?.totalUnitCount ?? 1)
+            let percentComplete = Double(snapshot.progress?.completedUnitCount ?? 0) /
+                                  Double(snapshot.progress?.totalUnitCount ?? 1)
             DispatchQueue.main.async {
                 uploadProgress = percentComplete
             }
@@ -564,7 +806,6 @@ struct UploadView: View {
         
         // Handle upload completion
         uploadTask.observe(.success) { _ in
-            // Get download URL
             storageRef.downloadURL { url, error in
                 DispatchQueue.main.async {
                     if let error = error {
@@ -611,223 +852,96 @@ struct UploadView: View {
             }
         }
     }
+}
+
+struct CaptionInputSection: View {
+    @Binding var caption: String
+    @Binding var isGeneratingCaption: Bool
+    var generateAICaption: () -> Void
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                // Video preview area
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.2))
-                        .aspectRatio(9/16, contentMode: .fit)
-                        .padding(.horizontal)
-                    
-                    if isLoadingVideo {
-                        ProgressView("Loading video...")
-                    } else if let videoURL = selectedVideo {
-                        VideoPlayer(url: videoURL)
-                            .aspectRatio(9/16, contentMode: .fit)
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                    } else {
-                        GeometryReader { geometry in
-                            VStack(spacing: 20) {
-                                Image(systemName: "video.badge.plus")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.gray)
-                                    .padding(.top, geometry.size.height * 0.15)
-                                
-                                Text("Choose video source")
-                                    .foregroundColor(.gray)
-                                
-                                Spacer()
-                                
-                                HStack(spacing: 20) {
-                                    // Camera Button
-                                    Button(action: {
-                                        showingCameraView = true
-                                    }) {
-                                        VStack(spacing: 12) {
-                                            Image(systemName: "camera.fill")
-                                                .font(.system(size: 32))
-                                            Text("Record")
-                                                .font(.subheadline)
-                                        }
-                                        .foregroundColor(.white)
-                                        .frame(width: 140, height: 140)
-                                        .background(Color.blue)
-                                        .cornerRadius(16)
-                                    }
-                                    
-                                    // Gallery Button
-                                    PhotosPicker(selection: $photoPickerItem,
-                                               matching: .videos,
-                                               photoLibrary: .shared()) {
-                                        VStack(spacing: 12) {
-                                            Image(systemName: "photo.fill")
-                                                .font(.system(size: 32))
-                                            Text("Gallery")
-                                                .font(.subheadline)
-                                        }
-                                        .foregroundColor(.white)
-                                        .frame(width: 140, height: 140)
-                                        .background(Color.green)
-                                        .cornerRadius(16)
-                                    }
-                                }
-                                .padding(.bottom, geometry.size.height * 0.2)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-                }
-                
-                // Caption input with AI button
-                VStack(alignment: .leading) {
-                    Text("Caption")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    
-                    TextEditor(text: $caption)
-                        .frame(height: 100)
-                        .padding(2)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(8)
-                        .disabled(isGeneratingCaption)
-                        .padding(.horizontal)
-                    
-                    Button(action: {
-                        generateAICaption()
-                    }) {
-                        HStack(spacing: 4) {
-                            if isGeneratingCaption {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "sparkles")
-                            }
-                            Text(isGeneratingCaption ? "Thinking..." : "Generate AI Caption")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                    }
-                    .disabled(isGeneratingCaption)
-                    .padding(.horizontal)
-                    
+        VStack(alignment: .leading) {
+            Text("Caption")
+                .font(.headline)
+                .padding(.horizontal)
+            
+            TextEditor(text: $caption)
+                .frame(height: 100)
+                .padding(2)
+                .background(Color(UIColor.systemGray6))
+                .cornerRadius(8)
+                .disabled(isGeneratingCaption)
+                .padding(.horizontal)
+            
+            Button(action: {
+                generateAICaption()
+            }) {
+                HStack(spacing: 4) {
                     if isGeneratingCaption {
-                        Text("AI is crafting the perfect caption...")
-                            .font(.caption)
-                            .foregroundColor(.purple)
-                            .padding(.horizontal)
-                            .padding(.top, 4)
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "sparkles")
                     }
+                    
+                    let buttonText = isGeneratingCaption ? "Thinking..." : "Generate AI Caption"
+                    Text(buttonText)
                 }
-                
-                if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .padding(.horizontal)
-                }
-                
-                // Upload button with progress
-                Button(action: {
-                    uploadVideo()
-                }) {
-                    ZStack {
-                        if isUploading {
-                            ProgressView(value: uploadProgress) {
-                                Text("Uploading... \(Int(uploadProgress * 100))%")
-                                    .foregroundColor(.white)
-                            }
-                            .progressViewStyle(LinearProgressViewStyle(tint: .white))
-                            .padding(.horizontal)
-                        } else {
-                            Text("Upload")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(selectedVideo != nil ? Color.blue : Color.gray)
-                    .cornerRadius(25)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .disabled(isGeneratingCaption)
+            .padding(.horizontal)
+            
+            if isGeneratingCaption {
+                Text("AI is crafting the perfect caption...")
+                    .font(.caption)
+                    .foregroundColor(.purple)
                     .padding(.horizontal)
-                }
-                .disabled(selectedVideo == nil || isUploading)
-                
-                Spacer()
-            }
-            .padding(.top)
-            .navigationTitle("New Post")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .fullScreenCover(isPresented: $showingCameraView) {
-            CameraView(selectedVideo: $selectedVideo)
-        }
-        .onChange(of: photoPickerItem) { oldValue, newValue in
-            Task {
-                isLoadingVideo = true
-                if let videoData = try? await newValue?.loadTransferable(type: VideoTransferData.self) {
-                    let fileName = "\(UUID().uuidString).mov"
-                    let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-                    try? videoData.data.write(to: fileURL)
-                    selectedVideo = fileURL
-                }
-                isLoadingVideo = false
+                    .padding(.top, 4)
             }
         }
     }
 }
 
-struct VideoPlayer: View {
-    let url: URL
+struct UploadProgressButton: View {
+    @Binding var selectedVideo: URL?
+    @Binding var isUploading: Bool
+    @Binding var uploadProgress: Double
+    
+    var action: () -> Void
     
     var body: some View {
-        VideoPlayerUIView(url: url)
+        Button(action: {
+            action()
+        }) {
+            ZStack {
+                if isUploading {
+                    ProgressView(value: uploadProgress) {
+                        Text("Uploading... \(Int(uploadProgress * 100))%")
+                            .foregroundColor(.white)
+                    }
+                    .progressViewStyle(LinearProgressViewStyle(tint: .white))
+                    .padding(.horizontal)
+                } else {
+                    Text("Upload")
+                        .fontWeight(.semibold)
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(selectedVideo != nil ? Color.blue : Color.gray)
+            .cornerRadius(25)
+            .padding(.horizontal)
+        }
+        .disabled(selectedVideo == nil || isUploading)
     }
 }
-
-struct VideoPlayerUIView: UIViewRepresentable {
-    let url: URL
-    
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        let player = AVPlayer(url: url)
-        let playerLayer = AVPlayerLayer(player: player)
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.frame = view.layer.bounds
-        view.layer.addSublayer(playerLayer)
-        player.play()
-        
-        // Loop video
-        NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
-                                             object: player.currentItem, queue: .main) { _ in
-            player.seek(to: CMTime.zero)
-            player.play()
-        }
-        
-        return view
-    }
-    
-    func updateUIView(_ uiView: UIView, context: Context) {
-        if let playerLayer = uiView.layer.sublayers?.first as? AVPlayerLayer {
-            playerLayer.frame = uiView.layer.bounds
-        }
-    }
-}
-
 
 struct CameraView: View {
     @Environment(\.dismiss) var dismiss
