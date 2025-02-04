@@ -10,9 +10,16 @@ struct VideoView: View {
     
     init(index: Int) {
         self.index = index
-        // Replace with actual video URL when available
-        let videoURL = URL(string: "https://example.com/video\(index).mp4")!
-        self.player = AVPlayer(url: videoURL)
+        // Use local video from bundle
+        if let videoURL = Bundle.main.url(forResource: "video\(index + 1)", withExtension: "mp4") {
+            self.player = AVPlayer(url: videoURL)
+        } else {
+            // Fallback to a default video if the numbered video isn't found
+            let defaultURL = Bundle.main.url(forResource: "video1", withExtension: "mp4") ?? 
+                           URL(string: "about:blank")!
+            self.player = AVPlayer(url: defaultURL)
+            print("⚠️ Could not find video\(index + 1).mp4, using fallback")
+        }
     }
     
     var body: some View {
@@ -21,6 +28,29 @@ struct VideoView: View {
             
             AVPlayerControllerRepresented(player: player)
                 .disabled(true)
+                .onAppear {
+                    // Start playing when view appears
+                    player.seek(to: .zero)
+                    player.play()
+                    
+                    // Setup video looping
+                    NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemDidPlayToEndTime,
+                        object: player.currentItem,
+                        queue: .main) { _ in
+                            player.seek(to: .zero)
+                            player.play()
+                        }
+                }
+                .onDisappear {
+                    // Cleanup when view disappears
+                    player.pause()
+                    NotificationCenter.default.removeObserver(
+                        self,
+                        name: .AVPlayerItemDidPlayToEndTime,
+                        object: player.currentItem
+                    )
+                }
             
             VStack {
                 Spacer()
@@ -96,6 +126,7 @@ struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.showsPlaybackControls = false
+        controller.videoGravity = .resizeAspectFill
         return controller
     }
     

@@ -463,7 +463,7 @@ struct UploadView: View {
                 // Video preview area
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.2))
+                        .fill(Color.white.opacity(0.2))
                         .aspectRatio(9/16, contentMode: .fit)
                         .padding(.horizontal)
                     
@@ -475,47 +475,54 @@ struct UploadView: View {
                             .cornerRadius(12)
                             .padding(.horizontal)
                     } else {
-                        VStack(spacing: 20) {
-                            Image(systemName: "video.badge.plus")
-                                .font(.system(size: 40))
-                                .foregroundColor(.gray)
-                            
-                            Text("Choose video source")
-                                .foregroundColor(.gray)
-                            
-                            HStack(spacing: 20) {
-                                // Camera Button
-                                Button(action: {
-                                    showingCameraView = true
-                                }) {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "camera.fill")
-                                            .font(.system(size: 24))
-                                        Text("Record")
-                                            .font(.subheadline)
-                                    }
-                                    .foregroundColor(.white)
-                                    .frame(width: 100, height: 100)
-                                    .background(Color.blue)
-                                    .cornerRadius(12)
-                                }
+                        GeometryReader { geometry in
+                            VStack(spacing: 20) {
+                                Image(systemName: "video.badge.plus")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.gray)
+                                    .padding(.top, geometry.size.height * 0.15)
                                 
-                                // Gallery Button
-                                PhotosPicker(selection: $photoPickerItem,
-                                           matching: .videos,
-                                           photoLibrary: .shared()) {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "photo.fill")
-                                            .font(.system(size: 24))
-                                        Text("Gallery")
-                                            .font(.subheadline)
+                                Text("Choose video source")
+                                    .foregroundColor(.gray)
+                                
+                                Spacer()
+                                
+                                HStack(spacing: 20) {
+                                    // Camera Button
+                                    Button(action: {
+                                        showingCameraView = true
+                                    }) {
+                                        VStack(spacing: 12) {
+                                            Image(systemName: "camera.fill")
+                                                .font(.system(size: 32))
+                                            Text("Record")
+                                                .font(.subheadline)
+                                        }
+                                        .foregroundColor(.white)
+                                        .frame(width: 140, height: 140)
+                                        .background(Color.blue)
+                                        .cornerRadius(16)
                                     }
-                                    .foregroundColor(.white)
-                                    .frame(width: 100, height: 100)
-                                    .background(Color.green)
-                                    .cornerRadius(12)
+                                    
+                                    // Gallery Button
+                                    PhotosPicker(selection: $photoPickerItem,
+                                               matching: .videos,
+                                               photoLibrary: .shared()) {
+                                        VStack(spacing: 12) {
+                                            Image(systemName: "photo.fill")
+                                                .font(.system(size: 32))
+                                            Text("Gallery")
+                                                .font(.subheadline)
+                                        }
+                                        .foregroundColor(.white)
+                                        .frame(width: 140, height: 140)
+                                        .background(Color.green)
+                                        .cornerRadius(16)
+                                    }
                                 }
+                                .padding(.bottom, geometry.size.height * 0.2)
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                 }
@@ -526,33 +533,34 @@ struct UploadView: View {
                         .font(.headline)
                         .padding(.horizontal)
                     
-                    HStack {
-                        TextField("Write a caption...", text: $caption)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .disabled(isGeneratingCaption)
-                        
-                        Button(action: {
-                            generateAICaption()
-                        }) {
-                            HStack(spacing: 4) {
-                                if isGeneratingCaption {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: "sparkles")
-                                }
-                                Text(isGeneratingCaption ? "Thinking..." : "AI")
-                            }
-                            .frame(width: isGeneratingCaption ? 100 : 70)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                        }
+                    TextEditor(text: $caption)
+                        .frame(height: 100)
+                        .padding(2)
+                        .background(Color(UIColor.systemGray6))
+                        .cornerRadius(8)
                         .disabled(isGeneratingCaption)
+                        .padding(.horizontal)
+                    
+                    Button(action: {
+                        generateAICaption()
+                    }) {
+                        HStack(spacing: 4) {
+                            if isGeneratingCaption {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text(isGeneratingCaption ? "Thinking..." : "Generate AI Caption")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
                     }
+                    .disabled(isGeneratingCaption)
                     .padding(.horizontal)
                     
                     if isGeneratingCaption {
