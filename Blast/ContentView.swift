@@ -200,6 +200,7 @@ struct ContentView: View {
     @StateObject private var videoViewModel = VideoViewModel()
     @State private var showingUploadView = false
     @State private var isRefreshing = false
+    @State private var currentVideoIndex = 0
     
     var body: some View {
         if !authState.isSignedIn {
@@ -221,11 +222,20 @@ struct ContentView: View {
                                     VideoView(index: index)
                                         .frame(width: geometry.size.width,
                                                height: geometry.size.height)
+                                        .id(index)
                                 }
                             }
                         }
                     }
                     .scrollTargetBehavior(.paging)
+                    .scrollPosition(id: .init(get: { currentVideoIndex },
+                                            set: { newIndex in
+                        if let newIndex = newIndex as? Int {
+                            currentVideoIndex = newIndex
+                            // Preload next video when scrolling
+                            VideoPreloadManager.shared.preloadNextVideo(currentIndex: currentVideoIndex)
+                        }
+                    }))
                 }
                 
                 // Top buttons container
@@ -271,6 +281,9 @@ struct ContentView: View {
             }
             .task {
                 await videoViewModel.fetchVideos()
+                // Preload first two videos when view appears
+                VideoPreloadManager.shared.preloadVideo(at: 0)
+                VideoPreloadManager.shared.preloadVideo(at: 1)
             }
         }
     }

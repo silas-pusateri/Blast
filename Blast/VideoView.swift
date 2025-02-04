@@ -3,6 +3,67 @@ import AVKit
 import FirebaseFirestore
 import FirebaseStorage
 
+// Video preloading manager
+class VideoPreloadManager {
+    static let shared = VideoPreloadManager()
+    private var preloadedPlayers: [Int: AVPlayer] = [:]
+    private var preloadedData: [Int: VideoData] = [:]
+    private let preloadQueue = DispatchQueue(label: "com.blast.videopreload")
+    
+    private init() {}
+    
+    func preloadVideo(at index: Int) {
+        guard preloadedPlayers[index] == nil else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("videos")
+            .order(by: "timestamp", descending: true)
+            .limit(to: index + 1)
+            .getDocuments { [weak self] snapshot, error in
+                guard let self = self,
+                      error == nil,
+                      let documents = snapshot?.documents,
+                      index < documents.count else { return }
+                
+                let document = documents[index]
+                let decoder = Firestore.Decoder()
+                decoder.userInfo[.documentPath] = document.reference.path
+                
+                do {
+                    let data = try document.data(as: VideoData.self, decoder: decoder)
+                    guard let videoURL = URL(string: data.videoUrl) else { return }
+                    
+                    preloadQueue.async {
+                        let asset = AVAsset(url: videoURL)
+                        let playerItem = AVPlayerItem(asset: asset)
+                        
+                        DispatchQueue.main.async {
+                            self.preloadedPlayers[index] = AVPlayer(playerItem: playerItem)
+                            self.preloadedData[index] = data
+                        }
+                    }
+                } catch {
+                    print("Error preloading video: \(error)")
+                }
+            }
+    }
+    
+    func getPreloadedPlayer(for index: Int) -> (AVPlayer, VideoData)? {
+        guard let player = preloadedPlayers[index],
+              let data = preloadedData[index] else { return nil }
+        return (player, data)
+    }
+    
+    func clearPreloadedPlayer(for index: Int) {
+        preloadedPlayers[index]?.pause()
+        preloadedPlayers.removeValue(forKey: index)
+        preloadedData.removeValue(forKey: index)
+    }
+    
+    func preloadNextVideo(currentIndex: Int) {
+        preloadVideo(at: currentIndex + 2)
+    }
+}
 
 struct VideoView: View {
     let index: Int
@@ -19,8 +80,20 @@ struct VideoView: View {
     }
     
     private func loadVideo() {
-        let db = Firestore.firestore()
+        // First check if we have a preloaded video
+        if let (preloadedPlayer, preloadedData) = VideoPreloadManager.shared.getPreloadedPlayer(for: index) {
+            self.player = preloadedPlayer
+            self.videoData = preloadedData
+            self.likes = preloadedData.likes
+            self.isLoading = false
+            
+            // Preload next video
+            VideoPreloadManager.shared.preloadNextVideo(currentIndex: index)
+            return
+        }
         
+        // If no preloaded video, load normally
+        let db = Firestore.firestore()
         db.collection("videos")
             .order(by: "timestamp", descending: true)
             .limit(to: index + 1)
@@ -43,8 +116,6 @@ struct VideoView: View {
                 }
                 
                 let document = documents[index]
-                
-                // Create decoder with document path
                 let decoder = Firestore.Decoder()
                 decoder.userInfo[.documentPath] = document.reference.path
                 
@@ -63,6 +134,9 @@ struct VideoView: View {
                         self.likes = data.likes
                         self.player = AVPlayer(url: videoURL)
                         self.isLoading = false
+                        
+                        // Preload next video
+                        VideoPreloadManager.shared.preloadNextVideo(currentIndex: index)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -115,6 +189,8 @@ struct VideoView: View {
                             name: .AVPlayerItemDidPlayToEndTime,
                             object: player.currentItem
                         )
+                        // Clear preloaded video for this index when view disappears
+                        VideoPreloadManager.shared.clearPreloadedPlayer(for: index)
                     }
                 
                 // Video overlay content
