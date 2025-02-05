@@ -60,6 +60,7 @@ struct VideoView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var isPlaying = true  // New state for play/pause
+    @State private var isVisible = false // Track visibility
     
     init(video: Video) {
         self.video = video
@@ -70,6 +71,8 @@ struct VideoView: View {
         // First check if we have a preloaded video
         if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
             self.player = preloadedPlayer
+            // Set initial mute state based on visibility
+            player?.isMuted = !isVisible
             isLoading = false
             
             // Preload next video
@@ -86,6 +89,8 @@ struct VideoView: View {
         
         // Create and setup player
         let player = AVPlayer(url: videoURL)
+        // Set initial mute state based on visibility
+        player.isMuted = !isVisible
         self.player = player
         isLoading = false
         
@@ -117,6 +122,8 @@ struct VideoView: View {
                         .onAppear {
                             // Start playing when view appears
                             player.seek(to: .zero)
+                            // Set initial mute state based on visibility
+                            player.isMuted = !isVisible
                             if isPlaying {
                                 player.play()
                             }
@@ -135,6 +142,7 @@ struct VideoView: View {
                         .onDisappear {
                             // Cleanup when view disappears
                             player.pause()
+                            player.isMuted = true
                             NotificationCenter.default.removeObserver(
                                 self,
                                 name: .AVPlayerItemDidPlayToEndTime,
@@ -161,6 +169,7 @@ struct VideoView: View {
                     isPlaying.toggle()
                     if isPlaying {
                         player.play()
+                        player.isMuted = !isVisible
                     } else {
                         player.pause()
                     }
@@ -245,11 +254,31 @@ struct VideoView: View {
             }
         }
         .sheet(isPresented: $isShowingComments) {
-            CommentView(commentCount: video.comments)
+            CommentView(video: video)
         }
         .onAppear {
             loadVideo()
         }
+        // Add visibility detection using GeometryReader
+        .overlay(
+            GeometryReader { proxy -> Color in
+                let isCurrentlyVisible = proxy.frame(in: .global).intersects(UIScreen.main.bounds)
+                if self.isVisible != isCurrentlyVisible {
+                    // Use DispatchQueue to avoid SwiftUI state update warning
+                    DispatchQueue.main.async {
+                        self.isVisible = isCurrentlyVisible
+                        self.player?.isMuted = !isCurrentlyVisible
+                        
+                        if isCurrentlyVisible && isPlaying {
+                            self.player?.play()
+                        } else if !isCurrentlyVisible {
+                            self.player?.pause()
+                        }
+                    }
+                }
+                return Color.clear
+            }
+        )
     }
 }
 
@@ -278,5 +307,14 @@ struct VideoView_Previews: PreviewProvider {
             comments: 50
         ))
         .environmentObject(AuthenticationState())
+    }
+}
+
+// Add visibility preference key
+private struct VisibilityPreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue()
     }
 } 

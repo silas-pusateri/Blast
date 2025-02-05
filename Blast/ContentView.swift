@@ -609,18 +609,237 @@ private struct OffsetPreferenceKey: PreferenceKey {
     }
 }
 
+// Comment model
+struct Comment: Identifiable {
+    let id: String
+    let videoId: String
+    let userId: String
+    let text: String
+    let timestamp: Date
+    var likes: Int
+    let parentCommentId: String?
+    
+    init(id: String = UUID().uuidString,
+         videoId: String,
+         userId: String,
+         text: String,
+         timestamp: Date = Date(),
+         likes: Int = 0,
+         parentCommentId: String? = nil) {
+        self.id = id
+        self.videoId = videoId
+        self.userId = userId
+        self.text = text
+        self.timestamp = timestamp
+        self.likes = likes
+        self.parentCommentId = parentCommentId
+    }
+    
+    init?(document: QueryDocumentSnapshot) {
+        let data = document.data()
+        
+        guard let videoId = data["videoId"] as? String,
+              let userId = data["userId"] as? String,
+              let text = data["text"] as? String,
+              let timestamp = (data["timestamp"] as? Timestamp)?.dateValue() else {
+            return nil
+        }
+        
+        self.id = document.documentID
+        self.videoId = videoId
+        self.userId = userId
+        self.text = text
+        self.timestamp = timestamp
+        self.likes = data["likes"] as? Int ?? 0
+        self.parentCommentId = data["parentCommentId"] as? String
+    }
+}
+
+// CommentViewModel to manage comment data
+class CommentViewModel: ObservableObject {
+    @Published var comments: [Comment] = []
+    @Published var isLoading = false
+    private var lastDocument: QueryDocumentSnapshot?
+    private let pageSize = 20
+    private let db = Firestore.firestore()
+    
+    func fetchComments(for videoId: String, isRefresh: Bool = false) async {
+        if isRefresh {
+            comments = []
+            lastDocument = nil
+        }
+        
+        guard !isLoading else { return }
+        isLoading = true
+        
+        do {
+            var query = db.collection("comments")
+                .whereField("videoId", isEqualTo: videoId)
+                .whereField("parentCommentId", isEqualTo: NSNull())
+                .order(by: "timestamp", descending: true)
+                .limit(to: pageSize)
+            
+            if let lastDocument = lastDocument {
+                query = query.start(afterDocument: lastDocument)
+            }
+            
+            let querySnapshot = try await query.getDocuments()
+            lastDocument = querySnapshot.documents.last
+            
+            let newComments = querySnapshot.documents.compactMap { Comment(document: $0) }
+            
+            await MainActor.run {
+                if isRefresh {
+                    self.comments = newComments
+                } else {
+                    self.comments.append(contentsOf: newComments)
+                }
+                self.isLoading = false
+            }
+        } catch {
+            print("Error fetching comments: \(error)")
+            await MainActor.run {
+                self.isLoading = false
+            }
+        }
+    }
+    
+    @MainActor
+    func addComment(to videoId: String, text: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "CommentError", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])
+        }
+        
+        let comment = Comment(videoId: videoId, userId: userId, text: text)
+        
+        let commentData: [String: Any] = [
+            "videoId": comment.videoId,
+            "userId": comment.userId,
+            "text": comment.text,
+            "timestamp": FieldValue.serverTimestamp(),
+            "likes": comment.likes
+        ]
+        
+        // Add comment to Firestore
+        try await db.collection("comments").document(comment.id).setData(commentData)
+        
+        // Update video's comment count
+        let videoRef = db.collection("videos").document(videoId)
+        try await videoRef.updateData([
+            "comments": FieldValue.increment(Int64(1))
+        ])
+        
+        // Add comment to local array
+        comments.insert(comment, at: 0)
+    }
+    
+    @MainActor
+    func addReply(to parentCommentId: String, videoId: String, text: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "CommentError", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])
+        }
+        
+        let reply = Comment(
+            videoId: videoId,
+            userId: userId,
+            text: text,
+            parentCommentId: parentCommentId
+        )
+        
+        let replyData: [String: Any] = [
+            "videoId": reply.videoId,
+            "userId": reply.userId,
+            "text": reply.text,
+            "timestamp": FieldValue.serverTimestamp(),
+            "likes": reply.likes,
+            "parentCommentId": parentCommentId
+        ]
+        
+        // Add reply to Firestore
+        try await db.collection("comments").document(reply.id).setData(replyData)
+        
+        // Update video's comment count
+        let videoRef = db.collection("videos").document(videoId)
+        try await videoRef.updateData([
+            "comments": FieldValue.increment(Int64(1))
+        ])
+    }
+    
+    @MainActor
+    func toggleLike(for comment: Comment) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        
+        let likeRef = db.collection("comments")
+            .document(comment.id)
+            .collection("likes")
+            .document(userId)
+        
+        let commentRef = db.collection("comments").document(comment.id)
+        
+        let likeDoc = try await likeRef.getDocument()
+        
+        if likeDoc.exists {
+            // Unlike
+            try await likeRef.delete()
+            try await commentRef.updateData([
+                "likes": FieldValue.increment(Int64(-1))
+            ])
+            
+            if let index = comments.firstIndex(where: { $0.id == comment.id }) {
+                comments[index].likes -= 1
+            }
+        } else {
+            // Like
+            try await likeRef.setData(["timestamp": FieldValue.serverTimestamp()])
+            try await commentRef.updateData([
+                "likes": FieldValue.increment(Int64(1))
+            ])
+            
+            if let index = comments.firstIndex(where: { $0.id == comment.id }) {
+                comments[index].likes += 1
+            }
+        }
+    }
+}
+
 struct CommentView: View {
     @Environment(\.dismiss) var dismiss
-    let commentCount: Int
+    let video: Video
+    @StateObject private var viewModel = CommentViewModel()
     @State private var newComment = ""
+    @State private var errorMessage: String?
+    @State private var isSubmitting = false
     
     var body: some View {
         NavigationView {
             VStack {
-                List {
-                    ForEach(0..<commentCount, id: \.self) { index in
-                        CommentRow()
+                if viewModel.isLoading && viewModel.comments.isEmpty {
+                    ProgressView()
+                        .frame(maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(viewModel.comments) { comment in
+                            CommentRow(comment: comment, video: video)
+                        }
+                        
+                        if !viewModel.comments.isEmpty && viewModel.isLoading {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        }
                     }
+                    .listStyle(PlainListStyle())
+                    .refreshable {
+                        await viewModel.fetchComments(for: video.id, isRefresh: true)
+                    }
+                }
+                
+                // Error message
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding(.horizontal)
                 }
                 
                 // Comment input area
@@ -632,21 +851,22 @@ struct CommentView: View {
                     
                     TextField("Add a comment...", text: $newComment)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .disabled(isSubmitting)
                     
                     Button(action: {
-                        // Add comment logic here
-                        if !newComment.isEmpty {
-                            newComment = ""
-                            // Hide keyboard
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                         to: nil, from: nil, for: nil)
-                        }
+                        submitComment()
                     }) {
-                        Text("Post")
-                            .fontWeight(.semibold)
-                            .foregroundColor(!newComment.isEmpty ? .blue : .gray)
+                        if isSubmitting {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.8)
+                        } else {
+                            Text("Post")
+                                .fontWeight(.semibold)
+                                .foregroundColor(!newComment.isEmpty ? .blue : .gray)
+                        }
                     }
-                    .disabled(newComment.isEmpty)
+                    .disabled(newComment.isEmpty || isSubmitting)
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -668,27 +888,40 @@ struct CommentView: View {
                 }
             }
         }
+        .task {
+            await viewModel.fetchComments(for: video.id)
+        }
+    }
+    
+    private func submitComment() {
+        isSubmitting = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                try await viewModel.addComment(to: video.id, text: newComment)
+                newComment = ""
+                // Hide keyboard
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                             to: nil, from: nil, for: nil)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSubmitting = false
+        }
     }
 }
 
 struct CommentRow: View {
-    let username = "@user\(Int.random(in: 100...999))"
-    let comment = [
-        "Love this! 🔥",
-        "Amazing content!",
-        "Keep it up! 👏",
-        "This is incredible",
-        "Can't stop watching this",
-    ].randomElement()!
-    @State private var likes: Int
-    @State private var isLiked = false
+    let comment: Comment
+    let video: Video
+    @EnvironmentObject private var authState: AuthenticationState
+    @StateObject private var viewModel = CommentViewModel()
     @State private var showReplies = false
     @State private var replyText = ""
-    let replies = Int.random(in: 0...5)
-    
-    init() {
-        _likes = State(initialValue: Int.random(in: 1...1000))
-    }
+    @State private var isSubmittingReply = false
+    @State private var errorMessage: String?
+    @State private var isLiked = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -700,32 +933,23 @@ struct CommentRow: View {
                     .foregroundColor(.gray)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(username)
+                    Text(comment.userId)
                         .font(.system(size: 14, weight: .semibold))
-                    Text(comment)
+                    Text(comment.text)
                         .font(.system(size: 14))
                     
                     // Comment actions
                     HStack(spacing: 16) {
-                        Text("2h")
+                        Text(comment.timestamp.timeAgo())
                             .foregroundColor(.gray)
                             .font(.system(size: 12))
                         
-                        if replies > 0 {
-                            Button(action: { showReplies.toggle() }) {
-                                Text("View \(replies) replies")
-                                    .foregroundColor(.gray)
-                                    .font(.system(size: 12))
-                            }
-                            .buttonStyle(BorderlessButtonStyle())
-                        } else {
-                            Button(action: { showReplies = true }) {
-                                Text("Reply")
-                                    .foregroundColor(.gray)
-                                    .font(.system(size: 12))
-                            }
-                            .buttonStyle(BorderlessButtonStyle())
+                        Button(action: { showReplies.toggle() }) {
+                            Text("Reply")
+                                .foregroundColor(.gray)
+                                .font(.system(size: 12))
                         }
+                        .buttonStyle(BorderlessButtonStyle())
                     }
                     .padding(.top, 4)
                 }
@@ -734,28 +958,36 @@ struct CommentRow: View {
                 
                 VStack(spacing: 4) {
                     Button(action: {
-                        isLiked.toggle()
-                        likes += isLiked ? 1 : -1
+                        Task {
+                            do {
+                                try await viewModel.toggleLike(for: comment)
+                                isLiked.toggle()
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
+                        }
                     }) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .foregroundColor(isLiked ? .red : .gray)
                     }
                     .buttonStyle(BorderlessButtonStyle())
                     
-                    Text("\(likes)")
+                    Text("\(comment.likes)")
                         .font(.system(size: 12))
                         .foregroundColor(.gray)
                 }
             }
             
+            // Error message
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+            
             // Replies section
             if showReplies {
                 VStack(spacing: 12) {
-                    // Existing replies
-                    ForEach(0..<replies, id: \.self) { _ in
-                        ReplyRow()
-                    }
-                    
                     // Reply input
                     HStack(spacing: 8) {
                         Image(systemName: "person.circle.fill")
@@ -766,80 +998,86 @@ struct CommentRow: View {
                         TextField("Add a reply...", text: $replyText)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .font(.system(size: 12))
+                            .disabled(isSubmittingReply)
                         
                         Button(action: {
-                            if !replyText.isEmpty {
-                                replyText = ""
-                                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                             to: nil, from: nil, for: nil)
-                            }
+                            submitReply()
                         }) {
-                            Text("Reply")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(!replyText.isEmpty ? .blue : .gray)
+                            if isSubmittingReply {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.6)
+                            } else {
+                                Text("Reply")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(!replyText.isEmpty ? .blue : .gray)
+                            }
                         }
                         .buttonStyle(BorderlessButtonStyle())
-                        .disabled(replyText.isEmpty)
+                        .disabled(replyText.isEmpty || isSubmittingReply)
                     }
                 }
                 .padding(.leading, 48)
             }
         }
         .padding(.vertical, 8)
+        .task {
+            // Check if user has liked this comment
+            if let userId = Auth.auth().currentUser?.uid {
+                do {
+                    let likeDoc = try await Firestore.firestore()
+                        .collection("comments")
+                        .document(comment.id)
+                        .collection("likes")
+                        .document(userId)
+                        .getDocument()
+                    
+                    isLiked = likeDoc.exists
+                } catch {
+                    print("Error checking like status: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func submitReply() {
+        isSubmittingReply = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                try await viewModel.addReply(to: comment.id, videoId: video.id, text: replyText)
+                replyText = ""
+                // Hide keyboard
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                             to: nil, from: nil, for: nil)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSubmittingReply = false
+        }
     }
 }
 
-struct ReplyRow: View {
-    let username = "@user\(Int.random(in: 100...999))"
-    let reply = [
-        "Totally agree!",
-        "Nice one 👍",
-        "Exactly!",
-        "Well said",
-        "100%",
-    ].randomElement()!
-    @State private var likes: Int
-    @State private var isLiked = false
-    
-    init() {
-        _likes = State(initialValue: Int.random(in: 1...100))
-    }
-    
-    var body: some View {
-        HStack(alignment: .top) {
-            Image(systemName: "person.circle.fill")
-                .resizable()
-                .frame(width: 24, height: 24)
-                .foregroundColor(.gray)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(username)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(reply)
-                    .font(.system(size: 12))
-                Text("1h")
-                    .foregroundColor(.gray)
-                    .font(.system(size: 10))
-                    .padding(.top, 2)
-            }
-            
-            Spacer()
-            
-            VStack(spacing: 2) {
-                Button(action: {
-                    isLiked.toggle()
-                    likes += isLiked ? 1 : -1
-                }) {
-                    Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .foregroundColor(isLiked ? .red : .gray)
-                        .scaleEffect(0.8)
-                }
-                .buttonStyle(BorderlessButtonStyle())
-                
-                Text("\(likes)")
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
-            }
+// Extension to format dates
+extension Date {
+    func timeAgo() -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: self, to: now)
+        
+        if let year = components.year, year >= 1 {
+            return "\(year)y"
+        } else if let month = components.month, month >= 1 {
+            return "\(month)mo"
+        } else if let day = components.day, day >= 1 {
+            return "\(day)d"
+        } else if let hour = components.hour, hour >= 1 {
+            return "\(hour)h"
+        } else if let minute = components.minute, minute >= 1 {
+            return "\(minute)m"
+        } else {
+            return "now"
         }
     }
 }
