@@ -312,7 +312,20 @@ struct MainContentView: View {
         }
         .edgesIgnoringSafeArea(.all)
         .sheet(isPresented: $showingUploadView) {
+            // Refresh feed when returning from upload
+            Task {
+                currentVideoIndex = 0
+                await videoViewModel.fetchVideos(isRefresh: true)
+                if let firstVideo = videoViewModel.videos.first {
+                    VideoPreloadManager.shared.preloadVideo(video: firstVideo)
+                }
+                if let secondVideo = videoViewModel.videos.dropFirst().first {
+                    VideoPreloadManager.shared.preloadVideo(video: secondVideo)
+                }
+            }
+        } content: {
             UploadView()
+                .environmentObject(videoViewModel)
         }
         .confirmationDialog(
             "Delete Video",
