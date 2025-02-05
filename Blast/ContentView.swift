@@ -191,6 +191,27 @@ class VideoViewModel: ObservableObject {
             self.isLoading = false
         }
     }
+    
+    @MainActor
+    func deleteVideo(_ video: Video) async throws {
+        let db = Firestore.firestore()
+        let storage = Storage.storage()
+        
+        // Delete video file from Storage
+        if let videoUrl = URL(string: video.url),
+           let storagePath = videoUrl.path.components(separatedBy: "o/").last?.removingPercentEncoding {
+            let storageRef = storage.reference().child(storagePath)
+            try await storageRef.delete()
+        }
+        
+        // Delete video document from Firestore
+        try await db.collection("videos").document(video.id).delete()
+        
+        // Remove video from local array
+        if let index = videos.firstIndex(where: { $0.id == video.id }) {
+            videos.remove(at: index)
+        }
+    }
 }
 
 // Add this struct to represent video data
@@ -209,6 +230,8 @@ struct ContentView: View {
     @State private var showingUploadView = false
     @State private var isRefreshing = false
     @State private var currentVideoIndex = 0
+    @State private var showingDeleteConfirmation = false
+    @State private var videoToDelete: Video?
     
     var body: some View {
         if !authState.isSignedIn {
@@ -232,6 +255,14 @@ struct ContentView: View {
                                         .frame(width: geometry.size.width,
                                                height: geometry.size.height)
                                         .id(index)
+                                        .onLongPressGesture {
+                                            let video = videoViewModel.videos[index]
+                                            // Only show delete option if the video belongs to the current user
+                                            if video.userId == Auth.auth().currentUser?.uid {
+                                                videoToDelete = video
+                                                showingDeleteConfirmation = true
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -288,6 +319,23 @@ struct ContentView: View {
             .edgesIgnoringSafeArea(.all)
             .sheet(isPresented: $showingUploadView) {
                 UploadView()
+            }
+            .confirmationDialog(
+                "Delete Video",
+                isPresented: $showingDeleteConfirmation,
+                presenting: videoToDelete
+            ) { video in
+                Button("Delete", role: .destructive) {
+                    Task {
+                        do {
+                            try await videoViewModel.deleteVideo(video)
+                        } catch {
+                            print("Error deleting video: \(error)")
+                        }
+                    }
+                }
+            } message: { video in
+                Text("Are you sure you want to delete this video? This action cannot be undone.")
             }
             .task {
                 await videoViewModel.fetchVideos()
@@ -721,6 +769,39 @@ struct VideoPreviewArea: View {
     }
 }
 
+// Add VideoCompressor class before UploadView
+class VideoCompressor {
+    static func compressVideo(inputURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+        let compressionName = UUID().uuidString
+        let compressedURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(compressionName).mp4")
+        
+        // Setup export session with higher quality compression preset
+        let asset = AVAsset(url: inputURL)
+        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset1920x1080) else {
+            completion(.failure(NSError(domain: "VideoCompressor", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create export session"])))
+            return
+        }
+        
+        // Configure export session
+        exportSession.outputURL = compressedURL
+        exportSession.outputFileType = .mp4
+        exportSession.shouldOptimizeForNetworkUse = true
+        
+        // Start compression
+        exportSession.exportAsynchronously {
+            DispatchQueue.main.async {
+                if let error = exportSession.error {
+                    completion(.failure(error))
+                } else if let compressedURL = exportSession.outputURL {
+                    completion(.success(compressedURL))
+                } else {
+                    completion(.failure(NSError(domain: "VideoCompressor", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown compression error"])))
+                }
+            }
+        }
+    }
+}
+
 struct UploadView: View {
     @Environment(\.dismiss) var dismiss
     
@@ -829,71 +910,87 @@ struct UploadView: View {
         isUploading = true
         errorMessage = nil
         
-        // Create a unique filename
-        let filename = "\(UUID().uuidString).mov"
-        let storageRef = Storage.storage().reference().child("videos/\(filename)")
-        
-        // Create metadata
-        let metadata = StorageMetadata()
-        metadata.contentType = "video/quicktime"
-        
-        // Start upload task
-        let uploadTask = storageRef.putFile(from: videoURL, metadata: metadata)
-        
-        // Monitor upload progress
-        uploadTask.observe(.progress) { snapshot in
-            let percentComplete = Double(snapshot.progress?.completedUnitCount ?? 0) /
-                                  Double(snapshot.progress?.totalUnitCount ?? 1)
-            DispatchQueue.main.async {
-                uploadProgress = percentComplete
-            }
-        }
-        
-        // Handle upload completion
-        uploadTask.observe(.success) { _ in
-            storageRef.downloadURL { url, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        errorMessage = "Failed to get download URL: \(error.localizedDescription)"
-                        isUploading = false
-                        return
+        // Start compression
+        VideoCompressor.compressVideo(inputURL: videoURL) { result in
+            switch result {
+            case .success(let compressedURL):
+                // Create a unique filename
+                let filename = "\(UUID().uuidString).mp4"
+                let storageRef = Storage.storage().reference().child("videos/\(filename)")
+                
+                // Create metadata
+                let metadata = StorageMetadata()
+                metadata.contentType = "video/mp4"
+                
+                // Start upload task
+                let uploadTask = storageRef.putFile(from: compressedURL, metadata: metadata)
+                
+                // Monitor upload progress
+                uploadTask.observe(.progress) { snapshot in
+                    let percentComplete = Double(snapshot.progress?.completedUnitCount ?? 0) /
+                                          Double(snapshot.progress?.totalUnitCount ?? 1)
+                    DispatchQueue.main.async {
+                        self.uploadProgress = percentComplete
                     }
-                    
-                    guard let downloadURL = url else {
-                        errorMessage = "Failed to get download URL"
-                        isUploading = false
-                        return
-                    }
-                    
-                    // Save video metadata to Firestore
-                    let db = Firestore.firestore()
-                    let videoData: [String: Any] = [
-                        "userId": Auth.auth().currentUser?.uid ?? "",
-                        "caption": caption,
-                        "videoUrl": downloadURL.absoluteString,
-                        "timestamp": FieldValue.serverTimestamp(),
-                        "likes": 0,
-                        "comments": 0
-                    ]
-                    
-                    db.collection("videos").addDocument(data: videoData) { error in
+                }
+                
+                // Handle upload completion
+                uploadTask.observe(.success) { _ in
+                    storageRef.downloadURL { url, error in
                         DispatchQueue.main.async {
-                            isUploading = false
                             if let error = error {
-                                errorMessage = "Failed to save video metadata: \(error.localizedDescription)"
-                            } else {
-                                dismiss()
+                                self.errorMessage = "Failed to get download URL: \(error.localizedDescription)"
+                                self.isUploading = false
+                                return
+                            }
+                            
+                            guard let downloadURL = url else {
+                                self.errorMessage = "Failed to get download URL"
+                                self.isUploading = false
+                                return
+                            }
+                            
+                            // Save video metadata to Firestore
+                            let db = Firestore.firestore()
+                            let videoData: [String: Any] = [
+                                "userId": Auth.auth().currentUser?.uid ?? "",
+                                "caption": self.caption,
+                                "videoUrl": downloadURL.absoluteString,
+                                "timestamp": FieldValue.serverTimestamp(),
+                                "likes": 0,
+                                "comments": 0
+                            ]
+                            
+                            db.collection("videos").addDocument(data: videoData) { error in
+                                DispatchQueue.main.async {
+                                    self.isUploading = false
+                                    if let error = error {
+                                        self.errorMessage = "Failed to save video metadata: \(error.localizedDescription)"
+                                    } else {
+                                        // Clean up compressed file
+                                        try? FileManager.default.removeItem(at: compressedURL)
+                                        self.dismiss()
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-        }
-        
-        uploadTask.observe(.failure) { snapshot in
-            DispatchQueue.main.async {
-                isUploading = false
-                errorMessage = snapshot.error?.localizedDescription ?? "Upload failed"
+                
+                uploadTask.observe(.failure) { snapshot in
+                    DispatchQueue.main.async {
+                        self.isUploading = false
+                        self.errorMessage = snapshot.error?.localizedDescription ?? "Upload failed"
+                        // Clean up compressed file on failure
+                        try? FileManager.default.removeItem(at: compressedURL)
+                    }
+                }
+                
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    self.isUploading = false
+                    self.errorMessage = "Compression failed: \(error.localizedDescription)"
+                }
             }
         }
     }
