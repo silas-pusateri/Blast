@@ -242,13 +242,29 @@ struct EditorView: View {
             let naturalSize = try await videoTrack.load(.naturalSize)
             let transform = try await videoTrack.load(.preferredTransform)
             let isPortrait = transform.a == 0 && abs(transform.b) == 1
-            exportSession.videoComposition = AVMutableVideoComposition(asset: composition) { request in
-                let composition = AVVideoComposition(request: request)
-                return composition
-            }
-            exportSession.videoComposition?.renderSize = isPortrait ? 
+            let renderSize = isPortrait ? 
                 CGSize(width: naturalSize.height, height: naturalSize.width) :
                 naturalSize
+            
+            let videoComposition = AVMutableVideoComposition()
+            videoComposition.renderSize = renderSize
+            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+            
+            // Create composition instruction
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+            
+            // Create layer instruction
+            let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+            layerInstruction.setTransform(transform, at: .zero)
+            
+            // Add layer instruction to composition instruction
+            instruction.layerInstructions = [layerInstruction]
+            
+            // Add instruction to video composition
+            videoComposition.instructions = [instruction]
+            
+            exportSession.videoComposition = videoComposition
             
             // Export the video
             await exportSession.export()

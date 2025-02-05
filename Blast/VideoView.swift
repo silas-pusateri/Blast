@@ -60,6 +60,14 @@ class VideoPreloadManager {
         preloadedData.removeValue(forKey: index)
     }
     
+    func clearAllPreloadedVideos() {
+        for (_, player) in preloadedPlayers {
+            player.pause()
+        }
+        preloadedPlayers.removeAll()
+        preloadedData.removeAll()
+    }
+    
     func preloadNextVideo(currentIndex: Int) {
         preloadVideo(at: currentIndex + 2)
     }

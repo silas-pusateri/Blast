@@ -158,6 +158,9 @@ class VideoViewModel: ObservableObject {
     @MainActor
     func fetchVideos() async {
         isLoading = true
+        // Clear all preloaded videos
+        VideoPreloadManager.shared.clearAllPreloadedVideos()
+        
         // Fetch videos from Firestore
         let db = Firestore.firestore()
         do {
@@ -177,6 +180,11 @@ class VideoViewModel: ObservableObject {
                     comments: data["comments"] as? Int ?? 0
                 )
             }
+            
+            // Preload first two videos after refresh
+            VideoPreloadManager.shared.preloadVideo(at: 0)
+            VideoPreloadManager.shared.preloadVideo(at: 1)
+            
             self.isLoading = false
         } catch {
             print("Error fetching videos: \(error)")
@@ -213,6 +221,7 @@ struct ContentView: View {
                         RefreshableView(
                             isRefreshing: $isRefreshing,
                             onRefresh: {
+                                currentVideoIndex = 0 // Reset to first video
                                 await videoViewModel.fetchVideos()
                                 isRefreshing = false
                             }
@@ -244,6 +253,7 @@ struct ContentView: View {
                     Button(action: {
                         isRefreshing = true
                         Task {
+                            currentVideoIndex = 0 // Reset to first video
                             await videoViewModel.fetchVideos()
                             isRefreshing = false
                         }
