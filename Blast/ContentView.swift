@@ -656,6 +656,7 @@ struct VideoPreviewArea: View {
     @Binding var showingCameraView: Bool
     @Binding var photoPickerItem: PhotosPickerItem?
     @State private var player: AVPlayer?
+    @State private var showingEditor = false
     
     var body: some View {
         ZStack {
@@ -667,20 +668,41 @@ struct VideoPreviewArea: View {
             if isLoadingVideo {
                 ProgressView("Loading video...")
             } else if let videoURL = selectedVideo {
-                VideoPlayer(player: AVPlayer(url: videoURL))
-                    .aspectRatio(9/16, contentMode: .fit)
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-                    .onAppear {
-                        // Create and store player when view appears
-                        player = AVPlayer(url: videoURL)
-                        player?.play()
+                ZStack(alignment: .topTrailing) {
+                    VideoPlayer(player: AVPlayer(url: videoURL))
+                        .aspectRatio(9/16, contentMode: .fit)
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                        .onAppear {
+                            // Create and store player when view appears
+                            player = AVPlayer(url: videoURL)
+                            player?.play()
+                        }
+                        .onDisappear {
+                            // Cleanup player when view disappears
+                            player?.pause()
+                            player = nil
+                        }
+                    
+                    Button(action: {
+                        showingEditor = true
+                    }) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
                     }
-                    .onDisappear {
-                        // Cleanup player when view disappears
-                        player?.pause()
-                        player = nil
+                    .padding(.top, 20)
+                    .padding(.trailing, 30)
+                }
+                .fullScreenCover(isPresented: $showingEditor) {
+                    EditorView(videoURL: videoURL) { editedVideoURL in
+                        // Update the selected video with the edited version
+                        selectedVideo = editedVideoURL
                     }
+                }
             } else {
                 // If no video selected, show the source selection UI
                 VideoSourceSelectionView(showingCameraView: $showingCameraView, photoPickerItem: $photoPickerItem)
