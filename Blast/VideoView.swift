@@ -59,6 +59,7 @@ struct VideoView: View {
     @State private var player: AVPlayer?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var isPlaying = true  // New state for play/pause
     
     init(video: Video) {
         self.video = video
@@ -110,33 +111,60 @@ struct VideoView: View {
                         .padding()
                 }
             } else if let player = player {
-                AVPlayerControllerRepresented(player: player)
-                    .disabled(true)
-                    .onAppear {
-                        // Start playing when view appears
-                        player.seek(to: .zero)
-                        player.play()
-                        
-                        // Setup video looping
-                        NotificationCenter.default.addObserver(
-                            forName: .AVPlayerItemDidPlayToEndTime,
-                            object: player.currentItem,
-                            queue: .main) { _ in
-                                player.seek(to: .zero)
+                ZStack {
+                    AVPlayerControllerRepresented(player: player)
+                        .disabled(true)
+                        .onAppear {
+                            // Start playing when view appears
+                            player.seek(to: .zero)
+                            if isPlaying {
                                 player.play()
                             }
+                            
+                            // Setup video looping
+                            NotificationCenter.default.addObserver(
+                                forName: .AVPlayerItemDidPlayToEndTime,
+                                object: player.currentItem,
+                                queue: .main) { _ in
+                                    player.seek(to: .zero)
+                                    if isPlaying {
+                                        player.play()
+                                    }
+                                }
+                        }
+                        .onDisappear {
+                            // Cleanup when view disappears
+                            player.pause()
+                            NotificationCenter.default.removeObserver(
+                                self,
+                                name: .AVPlayerItemDidPlayToEndTime,
+                                object: player.currentItem
+                            )
+                            // Clear preloaded video when view disappears
+                            VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
+                        }
+                    
+                    // Pause indicator overlay
+                    if !isPlaying {
+                        Circle()
+                            .fill(Color.black.opacity(0.5))
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 30))
+                                    .foregroundColor(.white)
+                            )
                     }
-                    .onDisappear {
-                        // Cleanup when view disappears
+                }
+                .contentShape(Rectangle())  // Make the entire area tappable
+                .onTapGesture {
+                    isPlaying.toggle()
+                    if isPlaying {
+                        player.play()
+                    } else {
                         player.pause()
-                        NotificationCenter.default.removeObserver(
-                            self,
-                            name: .AVPlayerItemDidPlayToEndTime,
-                            object: player.currentItem
-                        )
-                        // Clear preloaded video when view disappears
-                        VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
                     }
+                }
                 
                 // Video overlay content
                 VStack {
