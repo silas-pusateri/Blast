@@ -273,6 +273,7 @@ struct ContentView: View {
     var body: some View {
         if !authState.isSignedIn {
             LoginView()
+                .edgesIgnoringSafeArea(.all)
         } else {
             MainContentView(
                 showingUploadView: $showingUploadView,
@@ -282,6 +283,7 @@ struct ContentView: View {
                 videoToDelete: $videoToDelete
             )
             .environmentObject(videoViewModel)
+            .edgesIgnoringSafeArea(.all)
         }
     }
 }

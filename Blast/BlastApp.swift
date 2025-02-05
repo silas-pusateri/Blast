@@ -20,6 +20,7 @@ struct BlastApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(authState)
+                .edgesIgnoringSafeArea(.all)
         }
     }
 }

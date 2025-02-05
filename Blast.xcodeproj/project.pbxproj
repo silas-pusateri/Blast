@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EF73C20E2D532CB000D7264A /* VideoEditorSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EF73C20D2D532CB000D7264A /* VideoEditorSDK */; };
 		EFF82A0B2D516A9E0020728E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0A2D516A9E0020728E /* FirebaseAuth */; };
 		EFF82A0D2D516A9E0020728E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0C2D516A9E0020728E /* FirebaseCore */; };
 		EFF82A0F2D516A9E0020728E /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0E2D516A9E0020728E /* FirebaseDatabase */; };
@@ -38,9 +39,22 @@
 		EFF829362D51469D0020728E /* BlastUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlastUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EF071C4A2D5326BB00A1BF83 /* Exceptions for "Blast" folder in "Blast" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EFF8291B2D51469A0020728E /* Blast */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EFF8291E2D51469A0020728E /* Blast */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EF071C4A2D5326BB00A1BF83 /* Exceptions for "Blast" folder in "Blast" target */,
+			);
 			path = Blast;
 			sourceTree = "<group>";
 		};
@@ -62,6 +76,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EFF82A0F2D516A9E0020728E /* FirebaseDatabase in Frameworks */,
+				EF73C20E2D532CB000D7264A /* VideoEditorSDK in Frameworks */,
 				EFF82A152D516A9E0020728E /* FirebaseVertexAI in Frameworks */,
 				EFF82A112D516A9E0020728E /* FirebaseFirestore in Frameworks */,
 				EFF82A0D2D516A9E0020728E /* FirebaseCore in Frameworks */,
@@ -133,6 +148,7 @@
 				EFF82A102D516A9E0020728E /* FirebaseFirestore */,
 				EFF82A122D516A9E0020728E /* FirebaseStorage */,
 				EFF82A142D516A9E0020728E /* FirebaseVertexAI */,
+				EF73C20D2D532CB000D7264A /* VideoEditorSDK */,
 			);
 			productName = Blast;
 			productReference = EFF8291C2D51469A0020728E /* Blast.app */;
@@ -218,6 +234,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				EFF82A092D516A9E0020728E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				EF73C20C2D532CB000D7264A /* XCRemoteSwiftPackageReference "vesdk-ios-build" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EFF8291D2D51469A0020728E /* Products */;
@@ -420,23 +437,31 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Blast/Preview Content\"";
+				DEVELOPMENT_TEAM = DA6FJR4Q7R;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Blast/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Blast;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = test.Blast;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -448,23 +473,31 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Blast/Preview Content\"";
+				DEVELOPMENT_TEAM = DA6FJR4Q7R;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Blast/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Blast;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = test.Blast;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -578,6 +611,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		EF73C20C2D532CB000D7264A /* XCRemoteSwiftPackageReference "vesdk-ios-build" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/imgly/vesdk-ios-build";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.10.2;
+			};
+		};
 		EFF82A092D516A9E0020728E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -589,6 +630,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		EF73C20D2D532CB000D7264A /* VideoEditorSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF73C20C2D532CB000D7264A /* XCRemoteSwiftPackageReference "vesdk-ios-build" */;
+			productName = VideoEditorSDK;
+		};
 		EFF82A0A2D516A9E0020728E /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EFF82A092D516A9E0020728E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
