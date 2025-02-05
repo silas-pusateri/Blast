@@ -6,58 +6,32 @@ import FirebaseStorage
 // Video preloading manager
 class VideoPreloadManager {
     static let shared = VideoPreloadManager()
-    private var preloadedPlayers: [Int: AVPlayer] = [:]
-    private var preloadedData: [Int: VideoData] = [:]
+    private var preloadedPlayers: [String: AVPlayer] = [:]
     private let preloadQueue = DispatchQueue(label: "com.blast.videopreload")
     
     private init() {}
     
-    func preloadVideo(at index: Int) {
-        guard preloadedPlayers[index] == nil else { return }
+    func preloadVideo(video: Video) {
+        guard preloadedPlayers[video.id] == nil,
+              let videoURL = URL(string: video.url) else { return }
         
-        let db = Firestore.firestore()
-        db.collection("videos")
-            .order(by: "timestamp", descending: true)
-            .limit(to: index + 1)
-            .getDocuments { [weak self] snapshot, error in
-                guard let self = self,
-                      error == nil,
-                      let documents = snapshot?.documents,
-                      index < documents.count else { return }
-                
-                let document = documents[index]
-                let decoder = Firestore.Decoder()
-                decoder.userInfo[.documentPath] = document.reference.path
-                
-                do {
-                    let data = try document.data(as: VideoData.self, decoder: decoder)
-                    guard let videoURL = URL(string: data.videoUrl) else { return }
-                    
-                    preloadQueue.async {
-                        let asset = AVAsset(url: videoURL)
-                        let playerItem = AVPlayerItem(asset: asset)
-                        
-                        DispatchQueue.main.async {
-                            self.preloadedPlayers[index] = AVPlayer(playerItem: playerItem)
-                            self.preloadedData[index] = data
-                        }
-                    }
-                } catch {
-                    print("Error preloading video: \(error)")
-                }
+        preloadQueue.async { [weak self] in
+            let asset = AVAsset(url: videoURL)
+            let playerItem = AVPlayerItem(asset: asset)
+            
+            DispatchQueue.main.async {
+                self?.preloadedPlayers[video.id] = AVPlayer(playerItem: playerItem)
             }
+        }
     }
     
-    func getPreloadedPlayer(for index: Int) -> (AVPlayer, VideoData)? {
-        guard let player = preloadedPlayers[index],
-              let data = preloadedData[index] else { return nil }
-        return (player, data)
+    func getPreloadedPlayer(for videoId: String) -> AVPlayer? {
+        return preloadedPlayers[videoId]
     }
     
-    func clearPreloadedPlayer(for index: Int) {
-        preloadedPlayers[index]?.pause()
-        preloadedPlayers.removeValue(forKey: index)
-        preloadedData.removeValue(forKey: index)
+    func clearPreloadedPlayer(for videoId: String) {
+        preloadedPlayers[videoId]?.pause()
+        preloadedPlayers.removeValue(forKey: videoId)
     }
     
     func clearAllPreloadedVideos() {
@@ -65,94 +39,57 @@ class VideoPreloadManager {
             player.pause()
         }
         preloadedPlayers.removeAll()
-        preloadedData.removeAll()
     }
     
-    func preloadNextVideo(currentIndex: Int) {
-        preloadVideo(at: currentIndex + 2)
+    func preloadNextVideo(currentVideo: Video, videos: [Video]) {
+        guard let currentIndex = videos.firstIndex(where: { $0.id == currentVideo.id }),
+              currentIndex + 1 < videos.count else { return }
+        
+        let nextVideo = videos[currentIndex + 1]
+        preloadVideo(video: nextVideo)
     }
 }
 
 struct VideoView: View {
-    let index: Int
+    let video: Video
+    @EnvironmentObject private var videoViewModel: VideoViewModel
     @State private var isShowingComments = false
     @State private var isLiked = false
-    @State private var likes = 0
-    @State private var videoData: VideoData?
+    @State private var likes: Int
     @State private var player: AVPlayer?
     @State private var isLoading = true
     @State private var errorMessage: String?
     
-    init(index: Int) {
-        self.index = index
+    init(video: Video) {
+        self.video = video
+        self._likes = State(initialValue: video.likes)
     }
     
     private func loadVideo() {
         // First check if we have a preloaded video
-        if let (preloadedPlayer, preloadedData) = VideoPreloadManager.shared.getPreloadedPlayer(for: index) {
+        if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
             self.player = preloadedPlayer
-            self.videoData = preloadedData
-            self.likes = preloadedData.likes
-            self.isLoading = false
+            isLoading = false
             
             // Preload next video
-            VideoPreloadManager.shared.preloadNextVideo(currentIndex: index)
+            VideoPreloadManager.shared.preloadNextVideo(currentVideo: video, videos: videoViewModel.videos)
             return
         }
         
         // If no preloaded video, load normally
-        let db = Firestore.firestore()
-        db.collection("videos")
-            .order(by: "timestamp", descending: true)
-            .limit(to: index + 1)
-            .getDocuments { snapshot, error in
-                if let error = error {
-                    DispatchQueue.main.async {
-                        errorMessage = "Error loading video: \(error.localizedDescription)"
-                        isLoading = false
-                    }
-                    return
-                }
-                
-                guard let documents = snapshot?.documents,
-                      index < documents.count else {
-                    DispatchQueue.main.async {
-                        errorMessage = "No video found"
-                        isLoading = false
-                    }
-                    return
-                }
-                
-                let document = documents[index]
-                let decoder = Firestore.Decoder()
-                decoder.userInfo[.documentPath] = document.reference.path
-                
-                do {
-                    let data = try document.data(as: VideoData.self, decoder: decoder)
-                    guard let videoURL = URL(string: data.videoUrl) else {
-                        DispatchQueue.main.async {
-                            errorMessage = "Invalid video URL"
-                            isLoading = false
-                        }
-                        return
-                    }
-                    
-                    DispatchQueue.main.async {
-                        self.videoData = data
-                        self.likes = data.likes
-                        self.player = AVPlayer(url: videoURL)
-                        self.isLoading = false
-                        
-                        // Preload next video
-                        VideoPreloadManager.shared.preloadNextVideo(currentIndex: index)
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        errorMessage = "Error decoding video data: \(error.localizedDescription)"
-                        isLoading = false
-                    }
-                }
-            }
+        guard let videoURL = URL(string: video.url) else {
+            errorMessage = "Invalid video URL"
+            isLoading = false
+            return
+        }
+        
+        // Create and setup player
+        let player = AVPlayer(url: videoURL)
+        self.player = player
+        isLoading = false
+        
+        // Preload next video
+        VideoPreloadManager.shared.preloadNextVideo(currentVideo: video, videos: videoViewModel.videos)
     }
     
     var body: some View {
@@ -197,8 +134,8 @@ struct VideoView: View {
                             name: .AVPlayerItemDidPlayToEndTime,
                             object: player.currentItem
                         )
-                        // Clear preloaded video for this index when view disappears
-                        VideoPreloadManager.shared.clearPreloadedPlayer(for: index)
+                        // Clear preloaded video when view disappears
+                        VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
                     }
                 
                 // Video overlay content
@@ -207,9 +144,9 @@ struct VideoView: View {
                     
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(videoData?.userId ?? "unknown")
+                            Text(video.userId)
                                 .font(.system(size: 16, weight: .semibold))
-                            Text(videoData?.caption ?? "")
+                            Text(video.caption)
                                 .font(.system(size: 14, weight: .regular))
                                 .lineLimit(2)
                         }
@@ -222,11 +159,9 @@ struct VideoView: View {
                                 isLiked.toggle()
                                 likes += isLiked ? 1 : -1
                                 // Update likes in Firestore
-                                if let videoData = videoData {
-                                    let db = Firestore.firestore()
-                                    db.collection("videos").document(videoData.id)
-                                        .updateData(["likes": likes])
-                                }
+                                let db = Firestore.firestore()
+                                db.collection("videos").document(video.id)
+                                    .updateData(["likes": likes])
                             }) {
                                 VStack(spacing: 4) {
                                     Image(systemName: isLiked ? "heart.fill" : "heart")
@@ -245,7 +180,7 @@ struct VideoView: View {
                                     Image(systemName: "bubble.right")
                                         .foregroundColor(.white)
                                         .font(.system(size: 26))
-                                    Text("\(videoData?.comments ?? 0)")
+                                    Text("\(video.comments)")
                                         .foregroundColor(.white)
                                         .font(.system(size: 12))
                                 }
@@ -253,18 +188,16 @@ struct VideoView: View {
                             
                             Button(action: {
                                 // Share action
-                                if let videoUrl = videoData?.videoUrl {
-                                    let activityViewController = UIActivityViewController(
-                                        activityItems: [URL(string: videoUrl)!],
-                                        applicationActivities: nil
-                                    )
-                                    
-                                    // Present the share sheet
-                                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                       let window = windowScene.windows.first,
-                                       let rootViewController = window.rootViewController {
-                                        rootViewController.present(activityViewController, animated: true)
-                                    }
+                                let activityViewController = UIActivityViewController(
+                                    activityItems: [URL(string: video.url)!],
+                                    applicationActivities: nil
+                                )
+                                
+                                // Present the share sheet
+                                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                   let window = windowScene.windows.first,
+                                   let rootViewController = window.rootViewController {
+                                    rootViewController.present(activityViewController, animated: true)
                                 }
                             }) {
                                 VStack(spacing: 4) {
@@ -284,7 +217,7 @@ struct VideoView: View {
             }
         }
         .sheet(isPresented: $isShowingComments) {
-            CommentView(commentCount: videoData?.comments ?? 0)
+            CommentView(commentCount: video.comments)
         }
         .onAppear {
             loadVideo()
@@ -308,7 +241,14 @@ struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
 
 struct VideoView_Previews: PreviewProvider {
     static var previews: some View {
-        VideoView(index: 0)
-            .environmentObject(AuthenticationState())
+        VideoView(video: Video(
+            id: "1",
+            url: "https://example.com/video1.mp4",
+            caption: "A beautiful sunset",
+            userId: "user1",
+            likes: 100,
+            comments: 50
+        ))
+        .environmentObject(AuthenticationState())
     }
 } 

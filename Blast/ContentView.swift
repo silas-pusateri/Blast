@@ -154,22 +154,46 @@ struct LoginView: View {
 class VideoViewModel: ObservableObject {
     @Published var videos: [Video] = []
     @Published var isLoading = false
+    @Published var hasMoreVideos = true
+    private var lastDocument: DocumentSnapshot?
+    private let pageSize = 5
     
     @MainActor
-    func fetchVideos() async {
+    func fetchVideos(isRefresh: Bool = false) async {
+        if isRefresh {
+            // Reset pagination state on refresh
+            videos = []
+            lastDocument = nil
+            hasMoreVideos = true
+            // Clear all preloaded videos on refresh
+            VideoPreloadManager.shared.clearAllPreloadedVideos()
+        }
+        
+        // Don't fetch if we're already loading or there are no more videos
+        guard !isLoading && hasMoreVideos else { return }
+        
         isLoading = true
-        // Clear all preloaded videos
-        VideoPreloadManager.shared.clearAllPreloadedVideos()
         
         // Fetch videos from Firestore
         let db = Firestore.firestore()
         do {
-            let querySnapshot = try await db.collection("videos")
+            var query = db.collection("videos")
                 .order(by: "timestamp", descending: true)
-                .limit(to: 10)
-                .getDocuments()
+                .limit(to: pageSize)
             
-            self.videos = querySnapshot.documents.compactMap { document -> Video? in
+            // If we have a last document and this isn't a refresh, start after it
+            if let lastDocument = lastDocument, !isRefresh {
+                query = query.start(afterDocument: lastDocument)
+            }
+            
+            let querySnapshot = try await query.getDocuments()
+            
+            // Update pagination state
+            lastDocument = querySnapshot.documents.last
+            hasMoreVideos = !querySnapshot.documents.isEmpty && querySnapshot.documents.count == pageSize
+            
+            // Parse and append new videos
+            let newVideos = querySnapshot.documents.compactMap { document -> Video? in
                 let data = document.data()
                 return Video(
                     id: document.documentID,
@@ -181,14 +205,27 @@ class VideoViewModel: ObservableObject {
                 )
             }
             
-            // Preload first two videos after refresh
-            VideoPreloadManager.shared.preloadVideo(at: 0)
-            VideoPreloadManager.shared.preloadVideo(at: 1)
+            // Append new videos to existing list
+            if isRefresh {
+                videos = newVideos
+            } else {
+                videos.append(contentsOf: newVideos)
+            }
             
-            self.isLoading = false
+            // Preload first two videos if this is a refresh or we're at the start
+            if isRefresh || videos.count <= pageSize {
+                if let firstVideo = videos.first {
+                    VideoPreloadManager.shared.preloadVideo(video: firstVideo)
+                }
+                if videos.count > 1 {
+                    VideoPreloadManager.shared.preloadVideo(video: videos[1])
+                }
+            }
+            
+            isLoading = false
         } catch {
             print("Error fetching videos: \(error)")
-            self.isLoading = false
+            isLoading = false
         }
     }
     
@@ -237,112 +274,256 @@ struct ContentView: View {
         if !authState.isSignedIn {
             LoginView()
         } else {
-            // Main app content
-            ZStack(alignment: .topTrailing) {
-                GeometryReader { geometry in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        RefreshableView(
-                            isRefreshing: $isRefreshing,
-                            onRefresh: {
-                                currentVideoIndex = 0 // Reset to first video
-                                await videoViewModel.fetchVideos()
-                                isRefreshing = false
-                            }
-                        ) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(0..<videoViewModel.videos.count, id: \.self) { index in
-                                    VideoView(index: index)
-                                        .frame(width: geometry.size.width,
-                                               height: geometry.size.height)
-                                        .id(index)
-                                        .onLongPressGesture {
-                                            let video = videoViewModel.videos[index]
-                                            // Only show delete option if the video belongs to the current user
-                                            if video.userId == Auth.auth().currentUser?.uid {
-                                                videoToDelete = video
-                                                showingDeleteConfirmation = true
-                                            }
-                                        }
-                                }
-                            }
-                        }
-                    }
-                    .scrollTargetBehavior(.paging)
-                    .scrollPosition(id: .init(get: { currentVideoIndex },
-                                            set: { newIndex in
-                        if let newIndex = newIndex as? Int {
-                            currentVideoIndex = newIndex
-                            // Preload next video when scrolling
-                            VideoPreloadManager.shared.preloadNextVideo(currentIndex: currentVideoIndex)
-                        }
-                    }))
-                }
-                
-                // Top buttons container
-                HStack {
-                    // Refresh button
-                    Button(action: {
-                        isRefreshing = true
-                        Task {
-                            currentVideoIndex = 0 // Reset to first video
-                            await videoViewModel.fetchVideos()
-                            isRefreshing = false
-                        }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                    }
-                    
-                    Spacer()
-                    
-                    // Upload button
-                    Button(action: {
-                        showingUploadView = true
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
+            MainContentView(
+                showingUploadView: $showingUploadView,
+                isRefreshing: $isRefreshing,
+                currentVideoIndex: $currentVideoIndex,
+                showingDeleteConfirmation: $showingDeleteConfirmation,
+                videoToDelete: $videoToDelete
+            )
+            .environmentObject(videoViewModel)
+        }
+    }
+}
+
+// New struct to handle main content
+struct MainContentView: View {
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var showingUploadView: Bool
+    @Binding var isRefreshing: Bool
+    @Binding var currentVideoIndex: Int
+    @Binding var showingDeleteConfirmation: Bool
+    @Binding var videoToDelete: Video?
+    
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VideoScrollView(
+                currentVideoIndex: $currentVideoIndex,
+                showingDeleteConfirmation: $showingDeleteConfirmation,
+                videoToDelete: $videoToDelete,
+                isRefreshing: $isRefreshing
+            )
+            
+            TopButtonsView(
+                showingUploadView: $showingUploadView,
+                isRefreshing: $isRefreshing,
+                currentVideoIndex: $currentVideoIndex
+            )
+        }
+        .edgesIgnoringSafeArea(.all)
+        .sheet(isPresented: $showingUploadView) {
+            UploadView()
+        }
+        .confirmationDialog(
+            "Delete Video",
+            isPresented: $showingDeleteConfirmation,
+            presenting: videoToDelete
+        ) { video in
+            Button("Delete", role: .destructive) {
+                Task {
+                    do {
+                        try await videoViewModel.deleteVideo(video)
+                    } catch {
+                        print("Error deleting video: \(error)")
                     }
                 }
-                .padding(.top, 60)
-                .padding(.horizontal, 16)
             }
-            .edgesIgnoringSafeArea(.all)
-            .sheet(isPresented: $showingUploadView) {
-                UploadView()
+        } message: { video in
+            Text("Are you sure you want to delete this video? This action cannot be undone.")
+        }
+        .task {
+            await videoViewModel.fetchVideos(isRefresh: true)
+            if let firstVideo = videoViewModel.videos.first {
+                VideoPreloadManager.shared.preloadVideo(video: firstVideo)
             }
-            .confirmationDialog(
-                "Delete Video",
-                isPresented: $showingDeleteConfirmation,
-                presenting: videoToDelete
-            ) { video in
-                Button("Delete", role: .destructive) {
-                    Task {
-                        do {
-                            try await videoViewModel.deleteVideo(video)
-                        } catch {
-                            print("Error deleting video: \(error)")
-                        }
-                    }
+            if let secondVideo = videoViewModel.videos.dropFirst().first {
+                VideoPreloadManager.shared.preloadVideo(video: secondVideo)
+            }
+        }
+    }
+}
+
+// New struct for individual video item
+struct VideoItemView: View {
+    let video: Video
+    let index: Int
+    let geometry: GeometryProxy
+    let isLastVideo: Bool
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var showingDeleteConfirmation: Bool
+    @Binding var videoToDelete: Video?
+    
+    var body: some View {
+        VideoView(video: video)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height
+            )
+            .id(index)
+            .onLongPressGesture {
+                if video.userId == Auth.auth().currentUser?.uid {
+                    videoToDelete = video
+                    showingDeleteConfirmation = true
                 }
-            } message: { video in
-                Text("Are you sure you want to delete this video? This action cannot be undone.")
             }
-            .task {
+            .onAppear {
+                handleVideoAppearance()
+            }
+    }
+    
+    private func handleVideoAppearance() {
+        // Load more videos if this is the last one
+        if isLastVideo {
+            Task {
                 await videoViewModel.fetchVideos()
-                // Preload first two videos when view appears
-                VideoPreloadManager.shared.preloadVideo(at: 0)
-                VideoPreloadManager.shared.preloadVideo(at: 1)
             }
+        }
+        
+        // Preload next video when current one appears
+        if index < videoViewModel.videos.count {
+            let currentVideo = videoViewModel.videos[index]
+            VideoPreloadManager.shared.preloadNextVideo(
+                currentVideo: currentVideo,
+                videos: videoViewModel.videos
+            )
+        }
+    }
+}
+
+// New struct for video list content
+struct VideoListContent: View {
+    let geometry: GeometryProxy
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var showingDeleteConfirmation: Bool
+    @Binding var videoToDelete: Video?
+    
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(Array(videoViewModel.videos.enumerated()), id: \.element.id) { index, video in
+                VideoItemView(
+                    video: video,
+                    index: index,
+                    geometry: geometry,
+                    isLastVideo: video.id == videoViewModel.videos.last?.id,
+                    showingDeleteConfirmation: $showingDeleteConfirmation,
+                    videoToDelete: $videoToDelete
+                )
+            }
+            
+            if videoViewModel.isLoading {
+                LoadingIndicator(geometry: geometry)
+            }
+        }
+    }
+}
+
+// New struct for loading indicator
+struct LoadingIndicator: View {
+    let geometry: GeometryProxy
+    
+    var body: some View {
+        ProgressView()
+            .frame(width: geometry.size.width, height: 50)
+            .foregroundColor(.white)
+    }
+}
+
+// Refactored VideoScrollView
+struct VideoScrollView: View {
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var currentVideoIndex: Int
+    @Binding var showingDeleteConfirmation: Bool
+    @Binding var videoToDelete: Video?
+    @Binding var isRefreshing: Bool
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical, showsIndicators: false) {
+                RefreshableView(
+                    isRefreshing: $isRefreshing,
+                    onRefresh: {
+                        currentVideoIndex = 0
+                        await videoViewModel.fetchVideos(isRefresh: true)
+                        isRefreshing = false
+                    }
+                ) {
+                    VideoListContent(
+                        geometry: geometry,
+                        showingDeleteConfirmation: $showingDeleteConfirmation,
+                        videoToDelete: $videoToDelete
+                    )
+                }
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollTargetLayout()
+        }
+    }
+}
+
+// New struct for top buttons
+struct TopButtonsView: View {
+    @Binding var showingUploadView: Bool
+    @Binding var isRefreshing: Bool
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var currentVideoIndex: Int
+    
+    var body: some View {
+        HStack {
+            RefreshButton(
+                isRefreshing: $isRefreshing,
+                currentVideoIndex: $currentVideoIndex
+            )
+            
+            Spacer()
+            
+            UploadButton(showingUploadView: $showingUploadView)
+        }
+        .padding(.top, 60)
+        .padding(.horizontal, 16)
+    }
+}
+
+// New struct for refresh button
+struct RefreshButton: View {
+    @Binding var isRefreshing: Bool
+    @EnvironmentObject var videoViewModel: VideoViewModel
+    @Binding var currentVideoIndex: Int
+    
+    var body: some View {
+        Button(action: {
+            isRefreshing = true
+            Task {
+                currentVideoIndex = 0
+                await videoViewModel.fetchVideos(isRefresh: true)
+                isRefreshing = false
+            }
+        }) {
+            Image(systemName: "arrow.clockwise")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.5))
+                .clipShape(Circle())
+        }
+    }
+}
+
+// New struct for upload button
+struct UploadButton: View {
+    @Binding var showingUploadView: Bool
+    
+    var body: some View {
+        Button(action: {
+            showingUploadView = true
+        }) {
+            Image(systemName: "plus")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.5))
+                .clipShape(Circle())
         }
     }
 }
