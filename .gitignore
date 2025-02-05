@@ -1,3 +1,40 @@
-Blast/GoogleService-Info.plist
+# Xcode
 Blast/Info.plist
-Blast/Info.plist
+*/Info.plist
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.pbxuser
+
+# Additional common Xcode ignores
+.DS_Store
+*.swp
+*~.nib
+DerivedData/
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.xcuserstate
+.build/
+
+# Firebase
+GoogleService-Info.plist
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
