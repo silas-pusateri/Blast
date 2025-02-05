@@ -38,3 +38,10 @@ Pods/
 .build/
 .swiftpm/
 
+# Sensitive files
+**/Info.plist
+**/GoogleService-Info.plist
+**/client_*.plist
+**/credentials.plist
+**/keys.plist
+
