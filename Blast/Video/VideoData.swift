@@ -2,6 +2,16 @@ import SwiftUI
 import PhotosUI
 import FirebaseFirestore
 
+// Video model
+struct Video: Identifiable {
+    let id: String
+    let url: String
+    let caption: String
+    let userId: String
+    let likes: Int
+    let comments: Int
+}
+
 // For Firestore video data
 struct VideoData: Codable {
     let userId: String
