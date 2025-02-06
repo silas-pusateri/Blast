@@ -8,6 +8,7 @@
 import Foundation
 import FirebaseFirestore
 import FirebaseAuth
+import SwiftUI
 
 // CommentViewModel to manage comment data
 @MainActor
