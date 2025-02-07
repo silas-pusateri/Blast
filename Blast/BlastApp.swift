@@ -18,7 +18,7 @@ struct BlastApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            SplashScreenView()
                 .environmentObject(authState)
                 .edgesIgnoringSafeArea(.all)
         }
