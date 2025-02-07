@@ -32,108 +32,117 @@ struct LoginView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                // Logo/Title
-                Text("Blast")
-                    .font(.system(size: 40, weight: .bold))
-                    .padding(.top, 50)
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
                 
-                // Error message
-                if !errorMessage.isEmpty {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .padding(.horizontal)
-                }
-                
-                // Input fields
-                VStack(spacing: 15) {
-                    if isSignUp {
-                        TextField("Username", text: $username)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                VStack(spacing: 20) {
+                    // Logo/Title
+                    Text("Blast")
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.top, 50)
+                    
+                    // Error message
+                    if !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .padding(.horizontal)
                     }
                     
-                    TextField("Email", text: $email)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                    
-                    SecureField("Password", text: $password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                }
-                .padding(.horizontal, 32)
-                
-                // Login/SignUp Button
-                Button(action: {
-                    isLoading = true
-                    errorMessage = ""
-                    
-                    if isSignUp {
-                        // Validate username
-                        guard !username.isEmpty else {
-                            errorMessage = "Username is required"
-                            isLoading = false
-                            return
+                    // Input fields
+                    VStack(spacing: 15) {
+                        if isSignUp {
+                            TextField("Username", text: $username)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .foregroundColor(.black)
                         }
                         
-                        // Sign Up
-                        Auth.auth().createUser(withEmail: email, password: password) { result, error in
-                            if let error = error {
-                                handleAuthResult(error)
+                        TextField("Email", text: $email)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .foregroundColor(.black)
+                        
+                        SecureField("Password", text: $password)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .foregroundColor(.black)
+                    }
+                    .padding(.horizontal, 32)
+                    
+                    // Login/SignUp Button
+                    Button(action: {
+                        isLoading = true
+                        errorMessage = ""
+                        
+                        if isSignUp {
+                            // Validate username
+                            guard !username.isEmpty else {
+                                errorMessage = "Username is required"
+                                isLoading = false
                                 return
                             }
                             
-                            // Store username in Firestore
-                            if let user = result?.user {
-                                let db = Firestore.firestore()
-                                db.collection("users").document(user.uid).setData([
-                                    "username": username,
-                                    "email": email,
-                                    "createdAt": FieldValue.serverTimestamp()
-                                ]) { error in
-                                    if let error = error {
-                                        handleAuthResult(error)
-                                        // If storing username fails, delete the created user
-                                        try? Auth.auth().currentUser?.delete()
+                            // Sign Up
+                            Auth.auth().createUser(withEmail: email, password: password) { result, error in
+                                if let error = error {
+                                    handleAuthResult(error)
+                                    return
+                                }
+                                
+                                // Store username in Firestore
+                                if let user = result?.user {
+                                    let db = Firestore.firestore()
+                                    db.collection("users").document(user.uid).setData([
+                                        "username": username,
+                                        "email": email,
+                                        "createdAt": FieldValue.serverTimestamp()
+                                    ]) { error in
+                                        if let error = error {
+                                            handleAuthResult(error)
+                                            // If storing username fails, delete the created user
+                                            try? Auth.auth().currentUser?.delete()
+                                        }
+                                        isLoading = false
                                     }
-                                    isLoading = false
                                 }
                             }
+                        } else {
+                            // Login
+                            Auth.auth().signIn(withEmail: email, password: password) { result, error in
+                                handleAuthResult(error)
+                            }
                         }
-                    } else {
-                        // Login
-                        Auth.auth().signIn(withEmail: email, password: password) { result, error in
-                            handleAuthResult(error)
+                    }) {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text(isSignUp ? "Sign Up" : "Log In")
+                                .fontWeight(.bold)
                         }
                     }
-                }) {
-                    if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text(isSignUp ? "Sign Up" : "Log In")
+                    .frame(width: 200, height: 50)
+                    .background(Color.white)
+                    .foregroundColor(.black)
+                    .cornerRadius(25)
+                    .disabled(isLoading)
+                    
+                    // Toggle Login/SignUp
+                    Button(action: {
+                        isSignUp.toggle()
+                        errorMessage = ""
+                        username = ""  // Clear username when toggling
+                    }) {
+                        Text(isSignUp ? "Already have an account? Log in" : "Don't have an account? Sign up")
+                            .foregroundColor(.white)
                     }
+                    .padding(.top)
+                    
+                    Spacer()
                 }
-                .frame(width: 200, height: 50)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(25)
-                .disabled(isLoading)
-                
-                // Toggle Login/SignUp
-                Button(action: {
-                    isSignUp.toggle()
-                    errorMessage = ""
-                    username = ""  // Clear username when toggling
-                }) {
-                    Text(isSignUp ? "Already have an account? Log in" : "Don't have an account? Sign up")
-                        .foregroundColor(.blue)
-                }
-                .padding(.top)
-                
-                Spacer()
             }
             .navigationBarHidden(true)
         }

@@ -26,6 +26,8 @@ struct UploadView: View {
     @State private var isUploading = false
     @State private var uploadProgress: Double = 0
     @State private var errorMessage: String?
+    @State private var isCaptionFocused: Bool = false
+    @FocusState private var captionFieldFocused: Bool
     
     // Sample AI-generated captions
     let aiCaptions = [
@@ -46,13 +48,15 @@ struct UploadView: View {
                     selectedVideo: $selectedVideo,
                     isLoadingVideo: $isLoadingVideo,
                     showingCameraView: $showingCameraView,
-                    photoPickerItem: $photoPickerItem
+                    photoPickerItem: $photoPickerItem,
+                    isCaptionFocused: $isCaptionFocused
                 )
                 
                 // 2) Caption input (with AI generation)
                 CaptionInputSection(
                     caption: $caption,
                     isGeneratingCaption: $isGeneratingCaption,
+                    isCaptionFocused: $isCaptionFocused,
                     generateAICaption: generateAICaption
                 )
                 
@@ -103,8 +107,13 @@ struct UploadView: View {
                                 .progressViewStyle(LinearProgressViewStyle(tint: .white))
                                 .padding(.horizontal)
                             } else {
-                                Text("Upload")
-                                    .fontWeight(.semibold)
+                                HStack(spacing: 4) {
+                                    Text("Upload")
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                    Image(systemName: "chevron.right.2")
+                                        .foregroundColor(.white)
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -253,6 +262,8 @@ struct UploadView: View {
 struct CaptionInputSection: View {
     @Binding var caption: String
     @Binding var isGeneratingCaption: Bool
+    @Binding var isCaptionFocused: Bool
+    @FocusState private var textFieldFocused: Bool
     var generateAICaption: () -> Void
     
     var body: some View {
@@ -275,6 +286,10 @@ struct CaptionInputSection: View {
                     },
                     alignment: .topLeading
                 )
+                .focused($textFieldFocused)
+                .onChange(of: textFieldFocused) { oldValue, newValue in
+                    isCaptionFocused = newValue
+                }
             
             if isGeneratingCaption {
                 Text("AI is crafting the perfect caption...")
