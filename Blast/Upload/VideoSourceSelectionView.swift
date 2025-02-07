@@ -27,10 +27,11 @@ struct VideoSourceSelectionView: View {
                                 .font(.system(size: 32))
                             Text("Record")
                                 .font(.subheadline)
+                                .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
                         .frame(width: 140, height: 140)
-                        .background(Color.blue)
+                        .background(Color.red)
                         .cornerRadius(16)
                     }
                     
@@ -45,10 +46,11 @@ struct VideoSourceSelectionView: View {
                                 .font(.system(size: 32))
                             Text("Gallery")
                                 .font(.subheadline)
+                                .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
                         .frame(width: 140, height: 140)
-                        .background(Color.green)
+                        .background(Color.black)
                         .cornerRadius(16)
                     }
                 }
