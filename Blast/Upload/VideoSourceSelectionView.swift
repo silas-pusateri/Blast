@@ -15,17 +15,8 @@ struct VideoSourceSelectionView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 20) {
-                Image(systemName: "video.badge.plus")
-                    .font(.system(size: 40))
-                    .foregroundColor(.gray)
-                    .padding(.top, geometry.size.height * 0.15)
-                
-                Text("Choose video source")
-                    .foregroundColor(.gray)
-                
-                Spacer()
-                
+            VStack {
+                // Position buttons in upper third
                 HStack(spacing: 20) {
                     // Camera Button
                     Button(action: {
@@ -61,7 +52,9 @@ struct VideoSourceSelectionView: View {
                         .cornerRadius(16)
                     }
                 }
-                .padding(.bottom, geometry.size.height * 0.2)
+                .padding(.top, geometry.size.height * 0.15)
+                
+                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

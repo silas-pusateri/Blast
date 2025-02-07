@@ -20,6 +20,7 @@ struct CommentRow: View {
     @State private var isSubmittingReply = false
     @State private var errorMessage: String?
     @State private var isLiked = false
+    @State private var username: String = ""
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,7 +32,7 @@ struct CommentRow: View {
                     .foregroundColor(.gray)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(comment.userId)
+                    Text("@\(username)")
                         .font(.system(size: 14, weight: .semibold))
                     Text(comment.text)
                         .font(.system(size: 14))
@@ -133,6 +134,26 @@ struct CommentRow: View {
                     isLiked = likeDoc.exists
                 } catch {
                     print("Error checking like status: \(error)")
+                }
+            }
+            
+            // Fetch username
+            if let cachedUsername = UsernameCache.shared.getUsername(for: comment.userId) {
+                username = cachedUsername
+            } else {
+                let db = Firestore.firestore()
+                do {
+                    let userDoc = try await db.collection("users").document(comment.userId).getDocument()
+                    if let data = userDoc.data(),
+                       let fetchedUsername = data["username"] as? String {
+                        UsernameCache.shared.setUsername(fetchedUsername, for: comment.userId)
+                        username = fetchedUsername
+                    } else {
+                        username = "User"
+                    }
+                } catch {
+                    print("Error fetching username: \(error)")
+                    username = "User"
                 }
             }
         }

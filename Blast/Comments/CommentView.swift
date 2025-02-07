@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct CommentView: View {
     @Environment(\.dismiss) var dismiss
@@ -15,6 +16,7 @@ struct CommentView: View {
     @State private var newComment = ""
     @State private var errorMessage: String?
     @State private var isSubmitting = false
+    @State private var currentUsername: String = ""
     
     var body: some View {
         NavigationView {
@@ -23,56 +25,94 @@ struct CommentView: View {
                     ProgressView()
                         .frame(maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(viewModel.comments) { comment in
-                            CommentRow(comment: comment, video: video)
-                        }
-                        
-                        if !viewModel.comments.isEmpty && viewModel.isLoading {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                                .padding()
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            if !viewModel.comments.isEmpty {
+                                ForEach(viewModel.comments) { comment in
+                                    CommentRow(comment: comment, video: video)
+                                        .padding(.horizontal)
+                                    
+                                    Divider()
+                                }
+                            }
+                            
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                            }
+                            
+                            if viewModel.comments.isEmpty && !viewModel.isLoading {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "bubble.right")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.gray)
+                                    Text("No comments yet")
+                                        .font(.headline)
+                                        .foregroundColor(.gray)
+                                    Text("Be the first to comment!")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(.top, 100)
+                            }
                         }
                     }
-                    .listStyle(PlainListStyle())
                     .refreshable {
+                        print("Refreshing comments...") // Debug print
                         await viewModel.fetchComments(for: video.id, isRefresh: true)
                     }
                 }
                 
                 // Error message
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
+                if let error = viewModel.error {
+                    Text(error.localizedDescription)
                         .foregroundColor(.red)
                         .font(.caption)
                         .padding(.horizontal)
                 }
                 
                 // Comment input area
-                HStack(spacing: 12) {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .frame(width: 32, height: 32)
-                        .foregroundColor(.gray)
-                    
-                    TextField("Add a comment...", text: $newComment)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .disabled(isSubmitting)
-                    
-                    Button(action: {
-                        submitComment()
-                    }) {
-                        if isSubmitting {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .scaleEffect(0.8)
-                        } else {
-                            Text("Post")
-                                .fontWeight(.semibold)
-                                .foregroundColor(!newComment.isEmpty ? .blue : .gray)
-                        }
+                VStack(spacing: 8) {
+                    if let errorMessage = errorMessage {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .padding(.horizontal)
                     }
-                    .disabled(newComment.isEmpty || isSubmitting)
+                    
+                    HStack(spacing: 12) {
+                        VStack(alignment: .center, spacing: 2) {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 32, height: 32)
+                                .foregroundColor(.gray)
+                            Text("@\(currentUsername)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.gray)
+                        }
+                        .frame(width: 32)
+                        
+                        TextField("Add a comment...", text: $newComment)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .disabled(isSubmitting)
+                        
+                        Button(action: {
+                            submitComment()
+                        }) {
+                            if isSubmitting {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Text("Post")
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(!newComment.isEmpty ? .blue : .gray)
+                            }
+                        }
+                        .disabled(newComment.isEmpty || isSubmitting)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -95,7 +135,30 @@ struct CommentView: View {
             }
         }
         .task {
+            print("Initial comment fetch...") // Debug print
             await viewModel.fetchComments(for: video.id)
+            
+            // Fetch current user's username
+            if let userId = Auth.auth().currentUser?.uid {
+                if let cachedUsername = UsernameCache.shared.getUsername(for: userId) {
+                    currentUsername = cachedUsername
+                } else {
+                    let db = Firestore.firestore()
+                    do {
+                        let userDoc = try await db.collection("users").document(userId).getDocument()
+                        if let data = userDoc.data(),
+                           let username = data["username"] as? String {
+                            UsernameCache.shared.setUsername(username, for: userId)
+                            currentUsername = username
+                        } else {
+                            currentUsername = "User"
+                        }
+                    } catch {
+                        print("Error fetching current username: \(error)")
+                        currentUsername = "User"
+                    }
+                }
+            }
         }
     }
     

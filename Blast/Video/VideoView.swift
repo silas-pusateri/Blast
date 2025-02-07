@@ -56,6 +56,33 @@ class VideoPreloadManager {
     }
 }
 
+// Add username caching class
+class UsernameCache {
+    static let shared = UsernameCache()
+    private var cache: [String: String] = [:]
+    private let queue = DispatchQueue(label: "com.blast.usernamecache")
+    
+    private init() {}
+    
+    func getUsername(for userId: String) -> String? {
+        queue.sync {
+            return cache[userId]
+        }
+    }
+    
+    func setUsername(_ username: String, for userId: String) {
+        queue.async {
+            self.cache[userId] = username
+        }
+    }
+    
+    func clearCache() {
+        queue.async {
+            self.cache.removeAll()
+        }
+    }
+}
+
 struct VideoView: View {
     let video: Video
     @EnvironmentObject private var videoViewModel: VideoViewModel
@@ -68,10 +95,34 @@ struct VideoView: View {
     @State private var isPlaying = true
     @State private var isVisible = false
     @State private var playerTimeObserver: Any?
+    @State private var username: String = ""
 
     init(video: Video) {
         self.video = video
         self._likes = State(initialValue: video.likes)
+    }
+    
+    // Add username fetching function
+    private func fetchUsername() {
+        // Check cache first
+        if let cachedUsername = UsernameCache.shared.getUsername(for: video.userId) {
+            username = cachedUsername
+            return
+        }
+        
+        // If not in cache, fetch from Firestore
+        let db = Firestore.firestore()
+        db.collection("users").document(video.userId).getDocument { snapshot, error in
+            guard let data = snapshot?.data(),
+                  let fetchedUsername = data["username"] as? String else {
+                username = "User"
+                return
+            }
+            
+            // Update cache and state
+            UsernameCache.shared.setUsername(fetchedUsername, for: video.userId)
+            username = fetchedUsername
+        }
     }
     
     private func loadVideo() {
@@ -242,7 +293,7 @@ struct VideoView: View {
                     
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(video.userId)
+                            Text("@\(username)")
                                 .font(.system(size: 16, weight: .semibold))
                             Text(video.caption)
                                 .font(.system(size: 14, weight: .regular))
@@ -319,6 +370,7 @@ struct VideoView: View {
         }
         .onAppear {
             loadVideo()
+            fetchUsername()
         }
         .onDisappear {
             cleanup()

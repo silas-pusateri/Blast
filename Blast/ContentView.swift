@@ -18,6 +18,7 @@ struct LoginView: View {
     @EnvironmentObject private var authState: AuthenticationState
     @State private var email = ""
     @State private var password = ""
+    @State private var username = ""
     @State private var isSignUp = false
     @State private var errorMessage = ""
     @State private var isLoading = false
@@ -47,6 +48,13 @@ struct LoginView: View {
                 
                 // Input fields
                 VStack(spacing: 15) {
+                    if isSignUp {
+                        TextField("Username", text: $username)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    
                     TextField("Email", text: $email)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .textInputAutocapitalization(.never)
@@ -63,9 +71,36 @@ struct LoginView: View {
                     errorMessage = ""
                     
                     if isSignUp {
+                        // Validate username
+                        guard !username.isEmpty else {
+                            errorMessage = "Username is required"
+                            isLoading = false
+                            return
+                        }
+                        
                         // Sign Up
                         Auth.auth().createUser(withEmail: email, password: password) { result, error in
-                            handleAuthResult(error)
+                            if let error = error {
+                                handleAuthResult(error)
+                                return
+                            }
+                            
+                            // Store username in Firestore
+                            if let user = result?.user {
+                                let db = Firestore.firestore()
+                                db.collection("users").document(user.uid).setData([
+                                    "username": username,
+                                    "email": email,
+                                    "createdAt": FieldValue.serverTimestamp()
+                                ]) { error in
+                                    if let error = error {
+                                        handleAuthResult(error)
+                                        // If storing username fails, delete the created user
+                                        try? Auth.auth().currentUser?.delete()
+                                    }
+                                    isLoading = false
+                                }
+                            }
                         }
                     } else {
                         // Login
@@ -91,6 +126,7 @@ struct LoginView: View {
                 Button(action: {
                     isSignUp.toggle()
                     errorMessage = ""
+                    username = ""  // Clear username when toggling
                 }) {
                     Text(isSignUp ? "Already have an account? Log in" : "Don't have an account? Sign up")
                         .foregroundColor(.blue)

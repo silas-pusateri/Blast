@@ -37,11 +37,18 @@ struct Comment: Identifiable {
     
     init?(document: QueryDocumentSnapshot) {
         let data = document.data()
+        print("Parsing comment document: \(document.documentID)")  // Debug print
+        print("Document data: \(data)")  // Debug print
         
         guard let videoId = data["videoId"] as? String,
               let userId = data["userId"] as? String,
               let text = data["text"] as? String,
               let timestamp = (data["timestamp"] as? Timestamp)?.dateValue() else {
+            print("Failed to parse required fields:")  // Debug print
+            if data["videoId"] as? String == nil { print("- videoId is nil or not a String") }
+            if data["userId"] as? String == nil { print("- userId is nil or not a String") }
+            if data["text"] as? String == nil { print("- text is nil or not a String") }
+            if (data["timestamp"] as? Timestamp)?.dateValue() == nil { print("- timestamp is nil or invalid") }
             return nil
         }
         
@@ -52,5 +59,7 @@ struct Comment: Identifiable {
         self.timestamp = timestamp
         self.likes = data["likes"] as? Int ?? 0
         self.parentCommentId = data["parentCommentId"] as? String
+        
+        print("Successfully parsed comment: ID=\(self.id), videoId=\(self.videoId)")  // Debug print
     }
 }

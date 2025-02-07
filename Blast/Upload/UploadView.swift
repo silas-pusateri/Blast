@@ -64,13 +64,57 @@ struct UploadView: View {
                         .padding(.horizontal)
                 }
                 
-                // 3) Upload button with progress
-                UploadProgressButton(
-                    selectedVideo: $selectedVideo,
-                    isUploading: $isUploading,
-                    uploadProgress: $uploadProgress,
-                    action: uploadVideo
-                )
+                // 3) Button row
+                HStack(spacing: 16) {
+                    // AI Caption Button
+                    Button(action: {
+                        generateAICaption()
+                    }) {
+                        HStack(spacing: 4) {
+                            if isGeneratingCaption {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            
+                            let buttonText = isGeneratingCaption ? "Thinking..." : "Generate AI Caption"
+                            Text(buttonText)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
+                        .foregroundColor(.white)
+                        .cornerRadius(16)
+                    }
+                    .disabled(isGeneratingCaption)
+                    
+                    // Upload Button
+                    Button(action: {
+                        uploadVideo()
+                    }) {
+                        ZStack {
+                            if isUploading {
+                                ProgressView(value: uploadProgress) {
+                                    Text("Uploading... \(Int(uploadProgress * 100))%")
+                                        .foregroundColor(.white)
+                                }
+                                .progressViewStyle(LinearProgressViewStyle(tint: .white))
+                                .padding(.horizontal)
+                            } else {
+                                Text("Upload")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(selectedVideo != nil ? Color.blue : Color.gray)
+                        .cornerRadius(16)
+                    }
+                    .disabled(selectedVideo == nil || isUploading)
+                }
+                .padding(.horizontal)
                 
                 Spacer()
             }
@@ -213,10 +257,6 @@ struct CaptionInputSection: View {
     
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Caption")
-                .font(.headline)
-                .padding(.horizontal)
-            
             TextEditor(text: $caption)
                 .frame(height: 100)
                 .padding(2)
@@ -224,30 +264,17 @@ struct CaptionInputSection: View {
                 .cornerRadius(8)
                 .disabled(isGeneratingCaption)
                 .padding(.horizontal)
-            
-            Button(action: {
-                generateAICaption()
-            }) {
-                HStack(spacing: 4) {
-                    if isGeneratingCaption {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "sparkles")
-                    }
-                    
-                    let buttonText = isGeneratingCaption ? "Thinking..." : "Generate AI Caption"
-                    Text(buttonText)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(isGeneratingCaption ? Color.purple.opacity(0.7) : Color.purple)
-                .foregroundColor(.white)
-                .cornerRadius(8)
-            }
-            .disabled(isGeneratingCaption)
-            .padding(.horizontal)
+                .overlay(
+                    Group {
+                        if caption.isEmpty {
+                            Text("Caption")
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 8)
+                        }
+                    },
+                    alignment: .topLeading
+                )
             
             if isGeneratingCaption {
                 Text("AI is crafting the perfect caption...")
@@ -257,40 +284,5 @@ struct CaptionInputSection: View {
                     .padding(.top, 4)
             }
         }
-    }
-}
-
-struct UploadProgressButton: View {
-    @Binding var selectedVideo: URL?
-    @Binding var isUploading: Bool
-    @Binding var uploadProgress: Double
-    
-    var action: () -> Void
-    
-    var body: some View {
-        Button(action: {
-            action()
-        }) {
-            ZStack {
-                if isUploading {
-                    ProgressView(value: uploadProgress) {
-                        Text("Uploading... \(Int(uploadProgress * 100))%")
-                            .foregroundColor(.white)
-                    }
-                    .progressViewStyle(LinearProgressViewStyle(tint: .white))
-                    .padding(.horizontal)
-                } else {
-                    Text("Upload")
-                        .fontWeight(.semibold)
-                }
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(selectedVideo != nil ? Color.blue : Color.gray)
-            .cornerRadius(25)
-            .padding(.horizontal)
-        }
-        .disabled(selectedVideo == nil || isUploading)
     }
 }
