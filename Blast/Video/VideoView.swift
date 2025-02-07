@@ -8,27 +8,53 @@ class VideoPreloadManager {
     static let shared = VideoPreloadManager()
     private var preloadedPlayers: [String: AVPlayer] = [:]
     private let preloadQueue = DispatchQueue(label: "com.blast.videopreload")
+    private let maxCachedVideos = 4 // Keep at most 3 videos in cache
+    private var recentVideoIds: [String] = [] // Track order of videos for LRU cache
     
     private init() {}
     
     func preloadVideo(video: Video) {
-        // Clear any existing preloaded player for this video ID first
-        clearPreloadedPlayer(for: video.id)
-        
-        guard let videoURL = URL(string: video.url) else { return }
-        
         preloadQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // If video is already preloaded, move it to most recent
+            if self.preloadedPlayers[video.id] != nil {
+                self.updateRecentVideo(video.id)
+                return
+            }
+            
+            guard let videoURL = URL(string: video.url) else { return }
+            
             let asset = AVAsset(url: videoURL)
             let playerItem = AVPlayerItem(asset: asset)
             
             DispatchQueue.main.async {
-                self?.preloadedPlayers[video.id] = AVPlayer(playerItem: playerItem)
+                // Remove oldest video if we're at capacity
+                if self.recentVideoIds.count >= self.maxCachedVideos {
+                    if let oldestVideoId = self.recentVideoIds.first {
+                        self.clearPreloadedPlayer(for: oldestVideoId)
+                        self.recentVideoIds.removeFirst()
+                    }
+                }
+                
+                // Add new video
+                self.preloadedPlayers[video.id] = AVPlayer(playerItem: playerItem)
+                self.updateRecentVideo(video.id)
             }
         }
     }
     
+    private func updateRecentVideo(_ videoId: String) {
+        recentVideoIds.removeAll { $0 == videoId }
+        recentVideoIds.append(videoId)
+    }
+    
     func getPreloadedPlayer(for videoId: String) -> AVPlayer? {
-        return preloadedPlayers[videoId]
+        if let player = preloadedPlayers[videoId] {
+            updateRecentVideo(videoId)
+            return player
+        }
+        return nil
     }
     
     func clearPreloadedPlayer(for videoId: String) {
@@ -36,6 +62,7 @@ class VideoPreloadManager {
             player.pause()
             player.replaceCurrentItem(with: nil)
             preloadedPlayers.removeValue(forKey: videoId)
+            recentVideoIds.removeAll { $0 == videoId }
         }
     }
     
@@ -45,14 +72,25 @@ class VideoPreloadManager {
             player.replaceCurrentItem(with: nil)
             preloadedPlayers.removeValue(forKey: videoId)
         }
+        recentVideoIds.removeAll()
     }
     
     func preloadNextVideo(currentVideo: Video, videos: [Video]) {
-        guard let currentIndex = videos.firstIndex(where: { $0.id == currentVideo.id }),
-              currentIndex + 1 < videos.count else { return }
+        guard let currentIndex = videos.firstIndex(where: { $0.id == currentVideo.id }) else { return }
         
-        let nextVideo = videos[currentIndex + 1]
-        preloadVideo(video: nextVideo)
+        // Preload next video if available
+        if currentIndex + 1 < videos.count {
+            let nextVideo = videos[currentIndex + 1]
+            preloadVideo(video: nextVideo)
+        }
+        
+        // Preload previous video if available and not already cached
+        if currentIndex > 0 {
+            let previousVideo = videos[currentIndex - 1]
+            if preloadedPlayers[previousVideo.id] == nil {
+                preloadVideo(video: previousVideo)
+            }
+        }
     }
 }
 
@@ -156,7 +194,6 @@ struct VideoView: View {
         }
         
         player?.pause()
-        player?.replaceCurrentItem(with: nil)
         player = nil
         
         NotificationCenter.default.removeObserver(
@@ -259,9 +296,19 @@ struct VideoView: View {
                                 }
                         }
                         .onDisappear {
-                            cleanup()
-                            // Clear preloaded video when view disappears
-                            VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
+                            // Only pause the player when view disappears, don't clear it
+                            player.pause()
+                            
+                            if let oldObserver = playerTimeObserver {
+                                player.removeTimeObserver(oldObserver)
+                                playerTimeObserver = nil
+                            }
+                            
+                            NotificationCenter.default.removeObserver(
+                                self,
+                                name: .AVPlayerItemDidPlayToEndTime,
+                                object: nil
+                            )
                         }
                     
                     // Pause indicator overlay
@@ -373,35 +420,50 @@ struct VideoView: View {
             fetchUsername()
         }
         .onDisappear {
-            cleanup()
-            // Clear preloaded video when view disappears
-            VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
+            // Only pause the player when view disappears, don't clear it
+            player?.pause()
+            
+            if let oldObserver = playerTimeObserver {
+                player?.removeTimeObserver(oldObserver)
+                playerTimeObserver = nil
+            }
+            
+            NotificationCenter.default.removeObserver(
+                self,
+                name: .AVPlayerItemDidPlayToEndTime,
+                object: nil
+            )
         }
         // Add visibility detection using GeometryReader
         .overlay(
-            GeometryReader { proxy -> Color in
-                let isCurrentlyVisible = proxy.frame(in: .global).intersects(UIScreen.main.bounds)
-                if self.isVisible != isCurrentlyVisible {
-                    // Use DispatchQueue to avoid SwiftUI state update warning
-                    DispatchQueue.main.async {
-                        self.isVisible = isCurrentlyVisible
-                        self.player?.isMuted = !isCurrentlyVisible
-                        
-                        if isCurrentlyVisible && self.isPlaying {
-                            self.player?.play()
-                        } else if !isCurrentlyVisible {
-                            self.player?.pause()
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(
+                        key: VisibilityPreferenceKey.self,
+                        value: proxy.frame(in: .global).intersects(UIScreen.main.bounds)
+                    )
+                    .onPreferenceChange(VisibilityPreferenceKey.self) { isCurrentlyVisible in
+                        if self.isVisible != isCurrentlyVisible {
+                            // Use DispatchQueue to avoid SwiftUI state update warning
+                            DispatchQueue.main.async {
+                                self.isVisible = isCurrentlyVisible
+                                self.player?.isMuted = !isCurrentlyVisible
+                                
+                                if isCurrentlyVisible && self.isPlaying {
+                                    self.player?.play()
+                                } else if !isCurrentlyVisible {
+                                    self.player?.pause()
+                                }
+                            }
                         }
                     }
-                }
-                return Color.clear
             }
         )
     }
 }
 
 struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
-    let player: AVPlayer
+    let player: AVPlayer?
     
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
@@ -411,7 +473,9 @@ struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
         return controller
     }
     
-    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        uiViewController.player = player
+    }
 }
 
 struct VideoView_Previews: PreviewProvider {
