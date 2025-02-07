@@ -12,8 +12,10 @@ class VideoPreloadManager {
     private init() {}
     
     func preloadVideo(video: Video) {
-        guard preloadedPlayers[video.id] == nil,
-              let videoURL = URL(string: video.url) else { return }
+        // Clear any existing preloaded player for this video ID first
+        clearPreloadedPlayer(for: video.id)
+        
+        guard let videoURL = URL(string: video.url) else { return }
         
         preloadQueue.async { [weak self] in
             let asset = AVAsset(url: videoURL)
@@ -30,15 +32,19 @@ class VideoPreloadManager {
     }
     
     func clearPreloadedPlayer(for videoId: String) {
-        preloadedPlayers[videoId]?.pause()
-        preloadedPlayers.removeValue(forKey: videoId)
+        if let player = preloadedPlayers[videoId] {
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            preloadedPlayers.removeValue(forKey: videoId)
+        }
     }
     
     func clearAllPreloadedVideos() {
-        for (_, player) in preloadedPlayers {
+        for (videoId, player) in preloadedPlayers {
             player.pause()
+            player.replaceCurrentItem(with: nil)
+            preloadedPlayers.removeValue(forKey: videoId)
         }
-        preloadedPlayers.removeAll()
     }
     
     func preloadNextVideo(currentVideo: Video, videos: [Video]) {
@@ -69,6 +75,9 @@ struct VideoView: View {
     }
     
     private func loadVideo() {
+        // Clear any existing player and observers
+        cleanup()
+        
         // First check if we have a preloaded video
         if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
             setupPlayer(preloadedPlayer)
@@ -89,12 +98,25 @@ struct VideoView: View {
         setupPlayer(AVPlayer(url: videoURL))
     }
     
-    private func setupPlayer(_ newPlayer: AVPlayer) {
-        // Remove existing time observer if any
+    private func cleanup() {
         if let oldObserver = playerTimeObserver {
             player?.removeTimeObserver(oldObserver)
             playerTimeObserver = nil
         }
+        
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: nil
+        )
+    }
+    
+    private func setupPlayer(_ newPlayer: AVPlayer) {
+        cleanup()
         
         self.player = newPlayer
         newPlayer.isMuted = !isVisible
@@ -186,18 +208,7 @@ struct VideoView: View {
                                 }
                         }
                         .onDisappear {
-                            // Cleanup when view disappears
-                            if let observer = playerTimeObserver {
-                                player.removeTimeObserver(observer)
-                                playerTimeObserver = nil
-                            }
-                            player.pause()
-                            player.isMuted = true
-                            NotificationCenter.default.removeObserver(
-                                self,
-                                name: .AVPlayerItemDidPlayToEndTime,
-                                object: player.currentItem
-                            )
+                            cleanup()
                             // Clear preloaded video when view disappears
                             VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
                         }
@@ -308,6 +319,11 @@ struct VideoView: View {
         }
         .onAppear {
             loadVideo()
+        }
+        .onDisappear {
+            cleanup()
+            // Clear preloaded video when view disappears
+            VideoPreloadManager.shared.clearPreloadedPlayer(for: video.id)
         }
         // Add visibility detection using GeometryReader
         .overlay(

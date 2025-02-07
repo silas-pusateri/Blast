@@ -21,12 +21,13 @@ class VideoViewModel: ObservableObject {
     @MainActor
     func fetchVideos(isRefresh: Bool = false) async {
         if isRefresh {
+            // Clear all preloaded videos before resetting the state
+            VideoPreloadManager.shared.clearAllPreloadedVideos()
+            
             // Reset pagination state on refresh
             videos = []
             lastDocument = nil
             hasMoreVideos = true
-            // Clear all preloaded videos on refresh
-            VideoPreloadManager.shared.clearAllPreloadedVideos()
         }
         
         // Don't fetch if we're already loading or there are no more videos
@@ -72,13 +73,10 @@ class VideoViewModel: ObservableObject {
                 videos.append(contentsOf: newVideos)
             }
             
-            // Preload first two videos if this is a refresh or we're at the start
+            // Preload first video if this is a refresh or we're at the start
             if isRefresh || videos.count <= pageSize {
                 if let firstVideo = videos.first {
                     VideoPreloadManager.shared.preloadVideo(video: firstVideo)
-                }
-                if videos.count > 1 {
-                    VideoPreloadManager.shared.preloadVideo(video: videos[1])
                 }
             }
             
