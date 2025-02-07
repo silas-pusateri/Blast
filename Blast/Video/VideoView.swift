@@ -59,9 +59,10 @@ struct VideoView: View {
     @State private var player: AVPlayer?
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var isPlaying = true  // New state for play/pause
-    @State private var isVisible = false // Track visibility
-    
+    @State private var isPlaying = true
+    @State private var isVisible = false
+    @State private var playerTimeObserver: Any?
+
     init(video: Video) {
         self.video = video
         self._likes = State(initialValue: video.likes)
@@ -70,10 +71,7 @@ struct VideoView: View {
     private func loadVideo() {
         // First check if we have a preloaded video
         if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
-            self.player = preloadedPlayer
-            // Set initial mute state based on visibility
-            player?.isMuted = !isVisible
-            isLoading = false
+            setupPlayer(preloadedPlayer)
             
             // Preload next video
             VideoPreloadManager.shared.preloadNextVideo(currentVideo: video, videos: videoViewModel.videos)
@@ -88,14 +86,62 @@ struct VideoView: View {
         }
         
         // Create and setup player
-        let player = AVPlayer(url: videoURL)
-        // Set initial mute state based on visibility
-        player.isMuted = !isVisible
-        self.player = player
-        isLoading = false
+        setupPlayer(AVPlayer(url: videoURL))
+    }
+    
+    private func setupPlayer(_ newPlayer: AVPlayer) {
+        // Remove existing time observer if any
+        if let oldObserver = playerTimeObserver {
+            player?.removeTimeObserver(oldObserver)
+            playerTimeObserver = nil
+        }
         
-        // Preload next video
-        VideoPreloadManager.shared.preloadNextVideo(currentVideo: video, videos: videoViewModel.videos)
+        self.player = newPlayer
+        newPlayer.isMuted = !isVisible
+        
+        // Add periodic time observer for more precise synchronization
+        let interval = CMTime(seconds: 0.01, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        playerTimeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [newPlayer] _ in
+            guard let currentItem = newPlayer.currentItem else { return }
+            
+            if #available(iOS 16.0, *) {
+                Task {
+                    let videoTracks = try? await currentItem.asset.loadTracks(withMediaType: .video)
+                    let audioTracks = try? await currentItem.asset.loadTracks(withMediaType: .audio)
+                    
+                    if let videoTrack = videoTracks?.first,
+                       let audioTrack = audioTracks?.first {
+                        // Load timeRanges
+                        let videoTimeRange = try? await videoTrack.load(.timeRange)
+                        let audioTimeRange = try? await audioTrack.load(.timeRange)
+                        
+                        if let videoStart = videoTimeRange?.start.seconds,
+                           let audioStart = audioTimeRange?.start.seconds,
+                           abs(videoStart - audioStart) > 0.1 {
+                            // Reset playback to fix sync
+                            await MainActor.run {
+                                let currentTime = newPlayer.currentTime()
+                                newPlayer.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Fallback for iOS 15 and earlier
+                let videoTracks = currentItem.asset.tracks(withMediaType: .video)
+                let audioTracks = currentItem.asset.tracks(withMediaType: .audio)
+                
+                if let videoTrack = videoTracks.first,
+                   let audioTrack = audioTracks.first,
+                   abs(videoTrack.timeRange.start.seconds - audioTrack.timeRange.start.seconds) > 0.1 {
+                    // Reset playback to fix sync
+                    let currentTime = newPlayer.currentTime()
+                    newPlayer.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                }
+            }
+        }
+        
+        isLoading = false
     }
     
     var body: some View {
@@ -141,6 +187,10 @@ struct VideoView: View {
                         }
                         .onDisappear {
                             // Cleanup when view disappears
+                            if let observer = playerTimeObserver {
+                                player.removeTimeObserver(observer)
+                                playerTimeObserver = nil
+                            }
                             player.pause()
                             player.isMuted = true
                             NotificationCenter.default.removeObserver(
@@ -269,7 +319,7 @@ struct VideoView: View {
                         self.isVisible = isCurrentlyVisible
                         self.player?.isMuted = !isCurrentlyVisible
                         
-                        if isCurrentlyVisible && isPlaying {
+                        if isCurrentlyVisible && self.isPlaying {
                             self.player?.play()
                         } else if !isCurrentlyVisible {
                             self.player?.pause()

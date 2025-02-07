@@ -18,8 +18,11 @@ struct VideoItemView: View {
     let geometry: GeometryProxy
     let isLastVideo: Bool
     @EnvironmentObject var videoViewModel: VideoViewModel
+    @EnvironmentObject var authState: AuthenticationState
     @Binding var showingDeleteConfirmation: Bool
     @Binding var videoToDelete: Video?
+    @Binding var showingLogoutConfirmation: Bool
+    @State private var showingOptionsSheet = false
     
     var body: some View {
         VideoView(video: video)
@@ -29,10 +32,17 @@ struct VideoItemView: View {
             )
             .id(index)
             .onLongPressGesture {
-                if video.userId == Auth.auth().currentUser?.uid {
-                    videoToDelete = video
-                    showingDeleteConfirmation = true
-                }
+                showingOptionsSheet = true
+            }
+            .sheet(isPresented: $showingOptionsSheet) {
+                VideoOptionsSheet(
+                    video: video,
+                    showingDeleteConfirmation: $showingDeleteConfirmation,
+                    videoToDelete: $videoToDelete,
+                    showingLogoutConfirmation: $showingLogoutConfirmation,
+                    showingOptionsSheet: $showingOptionsSheet
+                )
+                .presentationDetents([.height(250)])
             }
             .onAppear {
                 handleVideoAppearance()
@@ -58,12 +68,75 @@ struct VideoItemView: View {
     }
 }
 
+// New struct for options sheet
+struct VideoOptionsSheet: View {
+    let video: Video
+    @Binding var showingDeleteConfirmation: Bool
+    @Binding var videoToDelete: Video?
+    @Binding var showingLogoutConfirmation: Bool
+    @Binding var showingOptionsSheet: Bool
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Button {
+                    // Profile action will be implemented later
+                    showingOptionsSheet = false
+                } label: {
+                    Label("Profile", systemImage: "person.circle")
+                        .foregroundColor(.primary)
+                }
+                
+                if video.userId == Auth.auth().currentUser?.uid {
+                    Button(role: .destructive) {
+                        videoToDelete = video
+                        showingDeleteConfirmation = true
+                        showingOptionsSheet = false
+                    } label: {
+                        Label {
+                            Text("Delete Video")
+                                .foregroundColor(.red)
+                        } icon: {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+                
+                Button(role: .destructive) {
+                    showingLogoutConfirmation = true
+                    showingOptionsSheet = false
+                } label: {
+                    Label {
+                        Text("Logout")
+                            .foregroundColor(.red)
+                    } icon: {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .navigationTitle("Options")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        showingOptionsSheet = false
+                    }
+                }
+            }
+        }
+    }
+}
+
 // New struct for video list content
 struct VideoListContent: View {
     let geometry: GeometryProxy
     @EnvironmentObject var videoViewModel: VideoViewModel
     @Binding var showingDeleteConfirmation: Bool
     @Binding var videoToDelete: Video?
+    @Binding var showingLogoutConfirmation: Bool
     
     var body: some View {
         LazyVStack(spacing: 0) {
@@ -75,7 +148,8 @@ struct VideoListContent: View {
                     geometry: geometry,
                     isLastVideo: video.id == videoViewModel.videos.last?.id,
                     showingDeleteConfirmation: $showingDeleteConfirmation,
-                    videoToDelete: $videoToDelete
+                    videoToDelete: $videoToDelete,
+                    showingLogoutConfirmation: $showingLogoutConfirmation
                 )
             }
             
@@ -104,6 +178,7 @@ struct VideoScrollView: View {
     @Binding var showingDeleteConfirmation: Bool
     @Binding var videoToDelete: Video?
     @Binding var isRefreshing: Bool
+    @Binding var showingLogoutConfirmation: Bool
     
     var body: some View {
         GeometryReader { geometry in
@@ -119,7 +194,8 @@ struct VideoScrollView: View {
                     VideoListContent(
                         geometry: geometry,
                         showingDeleteConfirmation: $showingDeleteConfirmation,
-                        videoToDelete: $videoToDelete
+                        videoToDelete: $videoToDelete,
+                        showingLogoutConfirmation: $showingLogoutConfirmation
                     )
                 }
             }

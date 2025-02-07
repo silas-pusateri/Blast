@@ -180,11 +180,13 @@ struct ContentView: View {
 // New struct to handle main content
 struct MainContentView: View {
     @EnvironmentObject var videoViewModel: VideoViewModel
+    @EnvironmentObject var authState: AuthenticationState
     @Binding var showingUploadView: Bool
     @Binding var isRefreshing: Bool
     @Binding var currentVideoIndex: Int
     @Binding var showingDeleteConfirmation: Bool
     @Binding var videoToDelete: Video?
+    @State private var showingLogoutConfirmation = false
     
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -192,7 +194,8 @@ struct MainContentView: View {
                 currentVideoIndex: $currentVideoIndex,
                 showingDeleteConfirmation: $showingDeleteConfirmation,
                 videoToDelete: $videoToDelete,
-                isRefreshing: $isRefreshing
+                isRefreshing: $isRefreshing,
+                showingLogoutConfirmation: $showingLogoutConfirmation
             )
             
             TopButtonsView(
@@ -234,6 +237,21 @@ struct MainContentView: View {
             }
         } message: { video in
             Text("Are you sure you want to delete this video? This action cannot be undone.")
+        }
+        .confirmationDialog(
+            "Logout",
+            isPresented: $showingLogoutConfirmation
+        ) {
+            Button("Logout", role: .destructive) {
+                do {
+                    try Auth.auth().signOut()
+                    authState.isSignedIn = false
+                } catch {
+                    print("Error signing out: \(error)")
+                }
+            }
+        } message: {
+            Text("Are you sure you want to logout?")
         }
         .task {
             await videoViewModel.fetchVideos(isRefresh: true)
