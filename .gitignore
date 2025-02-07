@@ -45,3 +45,4 @@ Pods/
 **/credentials.plist
 **/keys.plist
 
+.vscode/settings.json
