@@ -22,6 +22,7 @@ struct LoginView: View {
     @State private var isSignUp = false
     @State private var errorMessage = ""
     @State private var isLoading = false
+    @Environment(\.colorScheme) private var colorScheme
     
     // Modify logger initialization to be preview-safe
     #if DEBUG
@@ -54,21 +55,24 @@ struct LoginView: View {
                     VStack(spacing: 15) {
                         if isSignUp {
                             TextField("Username", text: $username)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .textFieldStyle(.roundedBorder)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                                .foregroundColor(.black)
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
+                                .background(colorScheme == .dark ? Color(UIColor.systemGray6) : .white)
                         }
                         
                         TextField("Email", text: $email)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textFieldStyle(.roundedBorder)
                             .textInputAutocapitalization(.never)
                             .keyboardType(.emailAddress)
-                            .foregroundColor(.black)
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                            .background(colorScheme == .dark ? Color(UIColor.systemGray6) : .white)
                         
                         SecureField("Password", text: $password)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .foregroundColor(.black)
+                            .textFieldStyle(.roundedBorder)
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                            .background(colorScheme == .dark ? Color(UIColor.systemGray6) : .white)
                     }
                     .padding(.horizontal, 32)
                     
