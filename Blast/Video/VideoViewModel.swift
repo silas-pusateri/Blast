@@ -62,9 +62,7 @@ class VideoViewModel: ObservableObject {
                     caption: data["caption"] as? String ?? "",
                     userId: data["userId"] as? String ?? "",
                     likes: data["likes"] as? Int ?? 0,
-                    comments: data["comments"] as? Int ?? 0,
-                    previousVersionId: data["previousVersionId"] as? String,
-                    changeDescription: data["changeDescription"] as? String
+                    comments: data["comments"] as? Int ?? 0
                 )
             }
             
@@ -129,9 +127,7 @@ class VideoViewModel: ObservableObject {
                 caption: videos[index].caption,
                 userId: videos[index].userId,
                 likes: videos[index].likes,
-                comments: videos[index].comments,
-                previousVersionId: videos[index].previousVersionId,
-                changeDescription: videos[index].changeDescription
+                comments: videos[index].comments
             )
             videos[index] = updatedVideo
             

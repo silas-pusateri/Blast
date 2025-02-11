@@ -10,8 +10,6 @@ struct Video: Identifiable {
     let userId: String
     let likes: Int
     let comments: Int
-    let previousVersionId: String?
-    let changeDescription: String?
 }
 
 // For Firestore video data
@@ -23,12 +21,10 @@ struct VideoData: Codable {
     let comments: Int
     var timestamp: Timestamp
     var id: String
-    var previousVersionId: String?
-    var changeDescription: String?
     
     enum CodingKeys: String, CodingKey {
         case userId, caption, videoUrl, likes, comments, timestamp
-        case id, previousVersionId, changeDescription
+        case id
     }
     
     init(from decoder: Decoder) throws {
@@ -39,8 +35,6 @@ struct VideoData: Codable {
         likes = try container.decode(Int.self, forKey: .likes)
         comments = try container.decode(Int.self, forKey: .comments)
         timestamp = try container.decode(Timestamp.self, forKey: .timestamp)
-        previousVersionId = try container.decodeIfPresent(String.self, forKey: .previousVersionId)
-        changeDescription = try container.decodeIfPresent(String.self, forKey: .changeDescription)
         
         // Extract document ID from reference path
         let documentPath = decoder.userInfo[.documentPath] as? String ?? ""

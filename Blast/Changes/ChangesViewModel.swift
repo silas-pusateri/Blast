@@ -44,50 +44,22 @@ class ChangesViewModel: ObservableObject {
         // First update the change status
         try await updateChangeStatus(change, newStatus: .accepted)
         
-        // Get the current video data
-        let videoRef = db.collection("videos").document(change.videoId)
-        let videoDoc = try await videoRef.getDocument()
-        guard let videoData = videoDoc.data() else {
-            throw NSError(domain: "ChangesViewModel", code: 2, userInfo: [NSLocalizedDescriptionKey: "Original video not found"])
-        }
-        
-        // If there's an edited video URL, create a new video post
+        // Then update the video with the new URL if available
         if let editUrl = change.editUrl {
-            // Create new video document with updated URL and version info
-            let newVideoData: [String: Any] = [
-                "userId": videoData["userId"] as? String ?? "",
-                "caption": videoData["caption"] as? String ?? "",
-                "videoUrl": editUrl,
-                "timestamp": FieldValue.serverTimestamp(),
-                "likes": 0,
-                "comments": 0,
-                "previousVersionId": change.videoId,
-                "changeDescription": change.description
-            ]
+            // Update the video URL in both Firestore and the local view model
+            try await videoViewModel.updateVideoURL(videoId: change.videoId, newURL: editUrl)
             
-            // Start a batch write
-            let batch = db.batch()
+            // Get the current video data to find the old URL
+            let videoRef = db.collection("videos").document(change.videoId)
+            let videoDoc = try await videoRef.getDocument()
             
-            // Add new video document
-            let newVideoRef = db.collection("videos").document()
-            batch.setData(newVideoData, forDocument: newVideoRef)
-            
-            // Delete old video document
-            batch.deleteDocument(videoRef)
-            
-            // Commit the batch
-            try await batch.commit()
-            
-            // Clean up the old video file
-            if let oldUrl = videoData["videoUrl"] as? String,
+            // Clean up the old video file if it exists
+            if let oldUrl = videoDoc.data()?["videoUrl"] as? String,
                let storagePath = URL(string: oldUrl)?.path.components(separatedBy: "o/").last?.removingPercentEncoding {
                 let storage = Storage.storage()
                 let oldRef = storage.reference().child(storagePath)
                 try await oldRef.delete()
             }
-            
-            // Refresh the video feed
-            await videoViewModel.fetchVideos(isRefresh: true)
         }
         
         // Refresh changes

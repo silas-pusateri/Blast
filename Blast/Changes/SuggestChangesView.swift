@@ -1,6 +1,5 @@
 import SwiftUI
 import AVKit
-import FirebaseAuth
 
 struct SuggestChangesView: View {
     let video: Video
@@ -14,10 +13,6 @@ struct SuggestChangesView: View {
     @State private var editedVideoURL: URL?
     @State private var editMetadata: [String: Any]?
     @State private var isUploading = false
-    
-    private var isSelfEdit: Bool {
-        video.userId == Auth.auth().currentUser?.uid
-    }
     
     init(video: Video, videoViewModel: VideoViewModel) {
         self.video = video
@@ -64,20 +59,9 @@ struct SuggestChangesView: View {
                     }
                 }
                 
-                Section(header: Text(isSelfEdit ? "Change Description (for version history)" : "Change Description")) {
+                Section(header: Text("Change Description")) {
                     TextEditor(text: $description)
                         .frame(height: 100)
-                        .overlay(
-                            Group {
-                                if description.isEmpty {
-                                    Text(isSelfEdit ? "Describe what you changed in this version..." : "Explain your suggested changes...")
-                                        .foregroundColor(.gray)
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 8)
-                                }
-                            },
-                            alignment: .topLeading
-                        )
                 }
                 
                 Section {
@@ -96,7 +80,7 @@ struct SuggestChangesView: View {
                     }
                 }
             }
-            .navigationTitle(isSelfEdit ? "Update Video" : "Suggest Changes")
+            .navigationTitle("Suggest Changes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -106,7 +90,7 @@ struct SuggestChangesView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(isSelfEdit ? "Create Update" : "Submit") {
+                    Button("Submit") {
                         submitChanges()
                     }
                     .disabled(description.isEmpty || isSubmitting || isUploading)
