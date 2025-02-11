@@ -31,7 +31,7 @@ struct VideoPreviewArea: View {
                         ProgressView("Loading video...")
                     } else if let videoURL = selectedVideo {
                         ZStack(alignment: .topTrailing) {
-                            VideoPlayer(player: player)
+                            VideoPlayer(player: AVPlayer(url: videoURL))
                                 .aspectRatio(9/16, contentMode: .fit)
                                 .cornerRadius(12)
                                 .padding(.horizontal)
@@ -79,7 +79,7 @@ struct VideoPreviewArea: View {
                             }
                         }
                         .fullScreenCover(isPresented: $showingEditor) {
-                            EditorView(videoURL: videoURL) { editedVideoURL in
+                            EditorView(videoURL: videoURL) { editedVideoURL, metadata in
                                 // Update the selected video with the edited version
                                 selectedVideo = editedVideoURL
                             }

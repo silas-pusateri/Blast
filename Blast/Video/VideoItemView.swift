@@ -37,6 +37,7 @@ struct VideoItemView: View {
             .sheet(isPresented: $showingOptionsSheet) {
                 VideoOptionsSheet(
                     video: video,
+                    videoViewModel: videoViewModel,
                     showingDeleteConfirmation: $showingDeleteConfirmation,
                     videoToDelete: $videoToDelete,
                     showingLogoutConfirmation: $showingLogoutConfirmation,
@@ -71,11 +72,14 @@ struct VideoItemView: View {
 // New struct for options sheet
 struct VideoOptionsSheet: View {
     let video: Video
+    let videoViewModel: VideoViewModel
     @Binding var showingDeleteConfirmation: Bool
     @Binding var videoToDelete: Video?
     @Binding var showingLogoutConfirmation: Bool
     @Binding var showingOptionsSheet: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var showingSuggestChanges = false
+    @State private var showingChangesReview = false
     
     var body: some View {
         NavigationView {
@@ -86,6 +90,24 @@ struct VideoOptionsSheet: View {
                 } label: {
                     Label("Profile", systemImage: "person.circle")
                         .foregroundColor(.primary)
+                }
+                
+                // Only show Suggest Changes if not the video owner
+                if video.userId != Auth.auth().currentUser?.uid {
+                    Button {
+                        showingSuggestChanges = true
+                    } label: {
+                        Label("Suggest Changes", systemImage: "pencil.and.outline")
+                            .foregroundColor(.primary)
+                    }
+                } else {
+                    // Show View Changes button for video owner
+                    Button {
+                        showingChangesReview = true
+                    } label: {
+                        Label("View Changes", systemImage: "list.bullet.clipboard")
+                            .foregroundColor(.primary)
+                    }
                 }
                 
                 if video.userId == Auth.auth().currentUser?.uid {
@@ -126,6 +148,12 @@ struct VideoOptionsSheet: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingSuggestChanges) {
+            SuggestChangesView(video: video, videoViewModel: videoViewModel)
+        }
+        .sheet(isPresented: $showingChangesReview) {
+            ChangesReviewView(video: video, videoViewModel: videoViewModel)
         }
     }
 }

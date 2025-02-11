@@ -107,4 +107,37 @@ class VideoViewModel: ObservableObject {
             videos.remove(at: index)
         }
     }
+    
+    @MainActor
+    func updateVideoURL(videoId: String, newURL: String) async throws {
+        // Update in Firestore
+        let db = Firestore.firestore()
+        try await db.collection("videos").document(videoId).updateData([
+            "videoUrl": newURL
+        ])
+        
+        // Update in local array
+        if let index = videos.firstIndex(where: { $0.id == videoId }) {
+            // Clear any preloaded version of this video before updating
+            VideoPreloadManager.shared.clearPreloadedPlayer(for: videoId)
+            
+            let updatedVideo = Video(
+                id: videos[index].id,
+                url: newURL,
+                caption: videos[index].caption,
+                userId: videos[index].userId,
+                likes: videos[index].likes,
+                comments: videos[index].comments
+            )
+            videos[index] = updatedVideo
+            
+            // Preload the new video
+            VideoPreloadManager.shared.preloadVideo(video: updatedVideo)
+            
+            // If this is the first video, also preload the next one
+            if index == 0 && videos.count > 1 {
+                VideoPreloadManager.shared.preloadVideo(video: videos[1])
+            }
+        }
+    }
 }
