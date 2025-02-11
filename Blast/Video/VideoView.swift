@@ -152,6 +152,7 @@ struct VideoView: View {
     @State private var username: String = ""
     @State private var currentVideoURL: String?
     @StateObject private var playerController = VideoPlayerController()
+    @State private var isRefreshingURL = false
 
     init(video: Video) {
         self.video = video
@@ -184,12 +185,13 @@ struct VideoView: View {
     private func loadVideo() {
         print("📹 [VideoView] Starting loadVideo for videoId: \(video.id), URL: \(video.url)")
         
-        // If the URL hasn't changed, don't reload
-        if currentVideoURL == video.url {
+        // If the URL hasn't changed and we're not refreshing, don't reload
+        if currentVideoURL == video.url && !isRefreshingURL {
             print("📹 [VideoView] Skipping reload - URL hasn't changed")
             return
         }
         currentVideoURL = video.url
+        isRefreshingURL = false
         
         // First check if we have a preloaded video
         if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
@@ -210,37 +212,62 @@ struct VideoView: View {
             return
         }
         
-        // Check if this is a local file URL
-        if videoURL.isFileURL {
-            print("📹 [VideoView] Loading local file from: \(videoURL.path)")
-            
-            // Check if file exists
-            let fileManager = FileManager.default
-            guard fileManager.fileExists(atPath: videoURL.path) else {
-                print("❌ [VideoView] Local video file does not exist at path: \(videoURL.path)")
-                playerController.errorMessage = "Video file not found"
-                playerController.isLoading = false
-                return
-            }
-            
-            // Check if file is readable
-            guard fileManager.isReadableFile(atPath: videoURL.path) else {
-                print("❌ [VideoView] Local video file is not readable at path: \(videoURL.path)")
-                playerController.errorMessage = "Video file is not accessible"
-                playerController.isLoading = false
-                return
-            }
-            
-            // Get file attributes
-            if let attributes = try? fileManager.attributesOfItem(atPath: videoURL.path) {
-                let fileSize = attributes[.size] as? UInt64 ?? 0
-                print("📹 [VideoView] Local video file size: \(fileSize) bytes")
-            }
-        }
-        
         print("📹 [VideoView] Creating new player for URL: \(videoURL)")
+        // Set up error handler for URL refresh
+        playerController.onLoadError = {
+            await refreshVideoURL()
+        }
         // Create and setup player
         playerController.setupPlayer(videoURL)
+    }
+    
+    private func refreshVideoURL() async {
+        print("🔄 [VideoView] Refreshing video URL for videoId: \(video.id)")
+        playerController.isLoading = true
+        playerController.errorMessage = nil
+        
+        do {
+            // Extract the path from the current URL
+            guard let currentURL = URL(string: video.url),
+                  let storagePath = currentURL.path.components(separatedBy: "o/").last?.removingPercentEncoding else {
+                throw NSError(domain: "VideoView", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid video URL format"])
+            }
+            
+            // Get a fresh download URL
+            let storage = Storage.storage()
+            let storageRef = storage.reference().child(storagePath)
+            let newURL = try await storageRef.downloadURL()
+            
+            // Update the video URL in Firestore
+            let db = Firestore.firestore()
+            try await db.collection("videos").document(video.id).updateData([
+                "videoUrl": newURL.absoluteString
+            ])
+            
+            // Update the local video model
+            await MainActor.run {
+                currentVideoURL = nil // Reset so loadVideo will work
+                if let index = videoViewModel.videos.firstIndex(where: { $0.id == video.id }) {
+                    videoViewModel.videos[index] = Video(
+                        id: video.id,
+                        url: newURL.absoluteString,
+                        caption: video.caption,
+                        userId: video.userId,
+                        likes: video.likes,
+                        comments: video.comments,
+                        previousVersionId: video.previousVersionId,
+                        changeDescription: video.changeDescription
+                    )
+                }
+                loadVideo()
+            }
+        } catch {
+            print("❌ [VideoView] Failed to refresh video URL: \(error)")
+            await MainActor.run {
+                playerController.errorMessage = "Failed to refresh video: \(error.localizedDescription)"
+                playerController.isLoading = false
+            }
+        }
     }
     
     var body: some View {
@@ -480,7 +507,9 @@ struct VideoView_Previews: PreviewProvider {
             caption: "A beautiful sunset",
             userId: "user1",
             likes: 100,
-            comments: 50
+            comments: 50,
+            previousVersionId: nil,
+            changeDescription: nil
         ))
         .environmentObject(AuthenticationState())
     }
@@ -501,6 +530,7 @@ class VideoPlayerController: NSObject, ObservableObject {
     @Published var isLoading = true
     @Published var errorMessage: String?
     var playerTimeObserver: Any?
+    var onLoadError: (() async -> Void)?
     
     func setupPlayer(_ videoURL: URL) {
         print("🎮 [VideoPlayerController] Setting up player for URL: \(videoURL)")
@@ -557,6 +587,10 @@ class VideoPlayerController: NSObject, ObservableObject {
                     self.errorMessage = "Failed to load video: \(error.localizedDescription)"
                     self.isLoading = false
                 }
+                // Try to refresh the URL
+                if let onLoadError = onLoadError {
+                    await onLoadError()
+                }
             }
         }
     }
@@ -565,6 +599,12 @@ class VideoPlayerController: NSObject, ObservableObject {
         if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
             print("❌ [VideoPlayerController] Failed to play to end: \(error)")
             errorMessage = "Failed to play video: \(error.localizedDescription)"
+            // Try to refresh the URL
+            if let onLoadError = onLoadError {
+                Task {
+                    await onLoadError()
+                }
+            }
         }
     }
     
@@ -586,8 +626,14 @@ class VideoPlayerController: NSObject, ObservableObject {
             case .failed:
                 if let error = player?.currentItem?.error {
                     print("❌ [VideoPlayerController] Player failed with error: \(error)")
+                    errorMessage = "Failed to load video"
+                    // Try to refresh the URL
+                    if let onLoadError = onLoadError {
+                        Task {
+                            await onLoadError()
+                        }
+                    }
                 }
-                errorMessage = "Failed to load video"
             case .unknown:
                 print("⚠️ [VideoPlayerController] Player status unknown")
                 break

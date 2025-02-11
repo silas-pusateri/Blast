@@ -221,7 +221,9 @@ struct UploadView: View {
                                 "videoUrl": downloadURL.absoluteString,
                                 "timestamp": FieldValue.serverTimestamp(),
                                 "likes": 0,
-                                "comments": 0
+                                "comments": 0,
+                                "previousVersionId": NSNull(),
+                                "changeDescription": NSNull()
                             ]
                             
                             db.collection("videos").addDocument(data: videoData) { error in
