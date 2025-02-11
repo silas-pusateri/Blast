@@ -17,6 +17,63 @@ struct VideoPreviewArea: View {
     @Binding var isCaptionFocused: Bool
     @State private var player: AVPlayer?
     @State private var showingEditor = false
+    @State private var isPreviewReady = false
+    @State private var previewError: String?
+    
+    private func setupVideoPreview(for url: URL) {
+        print("🎥 [VideoPreviewArea] Setting up preview for URL: \(url)")
+        
+        // Create asset with options
+        let assetOptions = [
+            AVURLAssetPreferPreciseDurationAndTimingKey: true
+        ]
+        let asset = AVURLAsset(url: url, options: assetOptions)
+        
+        // Load the asset asynchronously
+        Task {
+            do {
+                print("🎥 [VideoPreviewArea] Loading asset...")
+                // Load duration and tracks to ensure asset is playable
+                _ = try await asset.load(.duration)
+                let tracks = try await asset.load(.tracks)
+                
+                // Verify we have video tracks
+                guard tracks.contains(where: { $0.mediaType == .video }) else {
+                    print("❌ [VideoPreviewArea] No video tracks found")
+                    await MainActor.run {
+                        previewError = "Invalid video file format"
+                        isPreviewReady = false
+                    }
+                    return
+                }
+                
+                await MainActor.run {
+                    print("🎥 [VideoPreviewArea] Creating player")
+                    let playerItem = AVPlayerItem(asset: asset)
+                    let newPlayer = AVPlayer(playerItem: playerItem)
+                    self.player = newPlayer
+                    
+                    // Setup video looping
+                    NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemDidPlayToEndTime,
+                        object: playerItem,
+                        queue: .main) { [weak newPlayer] _ in
+                            newPlayer?.seek(to: .zero)
+                            newPlayer?.play()
+                        }
+                    
+                    isPreviewReady = true
+                    newPlayer.play()
+                }
+            } catch {
+                print("❌ [VideoPreviewArea] Failed to load asset: \(error)")
+                await MainActor.run {
+                    previewError = "Failed to load video: \(error.localizedDescription)"
+                    isPreviewReady = false
+                }
+            }
+        }
+    }
     
     var body: some View {
         Group {
@@ -30,58 +87,49 @@ struct VideoPreviewArea: View {
                     if isLoadingVideo {
                         ProgressView("Loading video...")
                     } else if let videoURL = selectedVideo {
-                        ZStack(alignment: .topTrailing) {
-                            VideoPlayer(player: AVPlayer(url: videoURL))
-                                .aspectRatio(9/16, contentMode: .fit)
-                                .cornerRadius(12)
-                                .padding(.horizontal)
-                                .onAppear {
-                                    // Create and store player when view appears
-                                    let newPlayer = AVPlayer(url: videoURL)
-                                    player = newPlayer
-                                    
-                                    // Setup video looping
-                                    NotificationCenter.default.addObserver(
-                                        forName: .AVPlayerItemDidPlayToEndTime,
-                                        object: newPlayer.currentItem,
-                                        queue: .main) { _ in
-                                            newPlayer.seek(to: .zero)
-                                            newPlayer.play()
-                                        }
-                                    
-                                    // Start playing
-                                    newPlayer.play()
-                                }
-                                .onDisappear {
-                                    // Cleanup player and observers when view disappears
-                                    player?.pause()
-                                    NotificationCenter.default.removeObserver(
-                                        self,
-                                        name: .AVPlayerItemDidPlayToEndTime,
-                                        object: nil
-                                    )
-                                    player = nil
-                                }
-                            
-                            if !isCaptionFocused {
-                                Button(action: {
-                                    showingEditor = true
-                                }) {
-                                    Image(systemName: "slider.horizontal.3")
-                                        .font(.title2)
+                        if !isPreviewReady {
+                            if let error = previewError {
+                                VStack {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.largeTitle)
                                         .foregroundColor(.white)
-                                        .padding(8)
-                                        .background(Color.black.opacity(0.6))
-                                        .clipShape(Circle())
+                                    Text(error)
+                                        .foregroundColor(.white)
+                                        .multilineTextAlignment(.center)
+                                        .padding()
                                 }
-                                .padding(.top, 20)
-                                .padding(.trailing, 30)
+                            } else {
+                                ProgressView("Preparing preview...")
                             }
-                        }
-                        .fullScreenCover(isPresented: $showingEditor) {
-                            EditorView(videoURL: videoURL) { editedVideoURL, metadata in
-                                // Update the selected video with the edited version
-                                selectedVideo = editedVideoURL
+                        } else {
+                            ZStack(alignment: .topTrailing) {
+                                if let player = player {
+                                    VideoPlayer(player: player)
+                                        .aspectRatio(9/16, contentMode: .fit)
+                                        .cornerRadius(12)
+                                        .padding(.horizontal)
+                                }
+                                
+                                if !isCaptionFocused {
+                                    Button(action: {
+                                        showingEditor = true
+                                    }) {
+                                        Image(systemName: "slider.horizontal.3")
+                                            .font(.title2)
+                                            .foregroundColor(.white)
+                                            .padding(8)
+                                            .background(Color.black.opacity(0.6))
+                                            .clipShape(Circle())
+                                    }
+                                    .padding(.top, 20)
+                                    .padding(.trailing, 30)
+                                }
+                            }
+                            .fullScreenCover(isPresented: $showingEditor) {
+                                EditorView(videoURL: videoURL) { editedVideoURL, metadata in
+                                    // Update the selected video with the edited version
+                                    selectedVideo = editedVideoURL
+                                }
                             }
                         }
                     }
@@ -94,6 +142,7 @@ struct VideoPreviewArea: View {
         .onChange(of: selectedVideo) { oldValue, newValue in
             // Clean up old player when video changes
             if oldValue != newValue {
+                print("🎥 [VideoPreviewArea] Video URL changed")
                 player?.pause()
                 NotificationCenter.default.removeObserver(
                     self,
@@ -101,7 +150,24 @@ struct VideoPreviewArea: View {
                     object: nil
                 )
                 player = nil
+                isPreviewReady = false
+                previewError = nil
+                
+                // Setup new video if available
+                if let newURL = newValue {
+                    setupVideoPreview(for: newURL)
+                }
             }
+        }
+        .onDisappear {
+            print("🎥 [VideoPreviewArea] View disappearing, cleaning up")
+            player?.pause()
+            NotificationCenter.default.removeObserver(
+                self,
+                name: .AVPlayerItemDidPlayToEndTime,
+                object: nil
+            )
+            player = nil
         }
     }
 }

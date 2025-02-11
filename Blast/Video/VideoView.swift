@@ -25,21 +25,37 @@ class VideoPreloadManager {
             
             guard let videoURL = URL(string: video.url) else { return }
             
-            let asset = AVAsset(url: videoURL)
-            let playerItem = AVPlayerItem(asset: asset)
+            // Create asset with options for better loading
+            let assetOptions = [
+                AVURLAssetPreferPreciseDurationAndTimingKey: true
+            ]
+            let asset = AVURLAsset(url: videoURL, options: assetOptions)
             
-            DispatchQueue.main.async {
-                // Remove oldest video if we're at capacity
-                if self.recentVideoIds.count >= self.maxCachedVideos {
-                    if let oldestVideoId = self.recentVideoIds.first {
-                        self.clearPreloadedPlayer(for: oldestVideoId)
-                        self.recentVideoIds.removeFirst()
+            // Load the asset asynchronously
+            Task {
+                do {
+                    // Load duration and tracks to ensure asset is playable
+                    _ = try await asset.load(.duration)
+                    _ = try await asset.load(.tracks)
+                    
+                    let playerItem = AVPlayerItem(asset: asset)
+                    
+                    await MainActor.run {
+                        // Remove oldest video if we're at capacity
+                        if self.recentVideoIds.count >= self.maxCachedVideos {
+                            if let oldestVideoId = self.recentVideoIds.first {
+                                self.clearPreloadedPlayer(for: oldestVideoId)
+                                self.recentVideoIds.removeFirst()
+                            }
+                        }
+                        
+                        // Add new video
+                        self.preloadedPlayers[video.id] = AVPlayer(playerItem: playerItem)
+                        self.updateRecentVideo(video.id)
                     }
+                } catch {
+                    print("❌ [VideoPreloadManager] Failed to load asset for video \(video.id): \(error)")
                 }
-                
-                // Add new video
-                self.preloadedPlayers[video.id] = AVPlayer(playerItem: playerItem)
-                self.updateRecentVideo(video.id)
             }
         }
     }
@@ -192,6 +208,34 @@ struct VideoView: View {
             playerController.errorMessage = "Invalid video URL"
             playerController.isLoading = false
             return
+        }
+        
+        // Check if this is a local file URL
+        if videoURL.isFileURL {
+            print("📹 [VideoView] Loading local file from: \(videoURL.path)")
+            
+            // Check if file exists
+            let fileManager = FileManager.default
+            guard fileManager.fileExists(atPath: videoURL.path) else {
+                print("❌ [VideoView] Local video file does not exist at path: \(videoURL.path)")
+                playerController.errorMessage = "Video file not found"
+                playerController.isLoading = false
+                return
+            }
+            
+            // Check if file is readable
+            guard fileManager.isReadableFile(atPath: videoURL.path) else {
+                print("❌ [VideoView] Local video file is not readable at path: \(videoURL.path)")
+                playerController.errorMessage = "Video file is not accessible"
+                playerController.isLoading = false
+                return
+            }
+            
+            // Get file attributes
+            if let attributes = try? fileManager.attributesOfItem(atPath: videoURL.path) {
+                let fileSize = attributes[.size] as? UInt64 ?? 0
+                print("📹 [VideoView] Local video file size: \(fileSize) bytes")
+            }
         }
         
         print("📹 [VideoView] Creating new player for URL: \(videoURL)")
@@ -462,47 +506,66 @@ class VideoPlayerController: NSObject, ObservableObject {
         print("🎮 [VideoPlayerController] Setting up player for URL: \(videoURL)")
         cleanup()
         
-        // Ensure we're on the main thread
-        DispatchQueue.main.async {
-            print("🎮 [VideoPlayerController] Creating new AVPlayer instance")
-            let newPlayer = AVPlayer(url: videoURL)
-            self.player = newPlayer
-            
-            // Prepare the player item
-            if let currentItem = newPlayer.currentItem {
-                print("🎮 [VideoPlayerController] Adding observer for player item status")
-                // Add KVO observer for player item status
-                currentItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.status), options: [.old, .new], context: nil)
+        // Create an asset options dictionary for better loading behavior
+        let assetOptions = [
+            AVURLAssetPreferPreciseDurationAndTimingKey: true
+        ]
+        
+        // Create the asset with options
+        let asset = AVURLAsset(url: videoURL, options: assetOptions)
+        
+        // Load the asset asynchronously
+        Task {
+            do {
+                print("🎮 [VideoPlayerController] Loading asset...")
+                // Load duration and tracks to ensure asset is playable
+                _ = try await asset.load(.duration)
+                let tracks = try await asset.load(.tracks)
                 
-                // Log initial status
-                print("🎮 [VideoPlayerController] Initial player item status: \(currentItem.status.rawValue)")
-                
-                // Wait for item to be ready before playing
-                if currentItem.status == .readyToPlay {
-                    print("🎮 [VideoPlayerController] Player item already ready to play")
-                    newPlayer.play()
-                }
-            } else {
-                print("❌ [VideoPlayerController] Failed to get player item")
-            }
-            
-            // Add periodic time observer for more precise synchronization
-            let interval = CMTime(seconds: 0.01, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-            self.playerTimeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak newPlayer] _ in
-                guard let player = newPlayer,
-                      let currentItem = player.currentItem else {
-                    print("❌ [VideoPlayerController] Time observer - Player or current item is nil")
+                // Verify we have video tracks
+                guard tracks.contains(where: { $0.mediaType == .video }) else {
+                    await MainActor.run {
+                        self.errorMessage = "Invalid video file format"
+                        self.isLoading = false
+                    }
                     return
                 }
                 
-                // Log playback state periodically
-                if currentItem.status == .failed {
-                    print("❌ [VideoPlayerController] Playback failed: \(String(describing: currentItem.error))")
+                await MainActor.run {
+                    print("🎮 [VideoPlayerController] Asset loaded successfully")
+                    let playerItem = AVPlayerItem(asset: asset)
+                    let newPlayer = AVPlayer(playerItem: playerItem)
+                    self.player = newPlayer
+                    
+                    // Add error observer for player item
+                    NotificationCenter.default.addObserver(
+                        self,
+                        selector: #selector(self.playerItemFailedToPlay(_:)),
+                        name: NSNotification.Name.AVPlayerItemFailedToPlayToEndTime,
+                        object: playerItem
+                    )
+                    
+                    // Add KVO observer for player item status
+                    playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.status), options: [.old, .new], context: nil)
+                    
+                    print("🎮 [VideoPlayerController] Player setup complete")
+                    self.isLoading = false
+                }
+            } catch {
+                print("❌ [VideoPlayerController] Failed to load asset: \(error)")
+                await MainActor.run {
+                    self.errorMessage = "Failed to load video: \(error.localizedDescription)"
+                    self.isLoading = false
                 }
             }
         }
-        
-        isLoading = false
+    }
+    
+    @objc private func playerItemFailedToPlay(_ notification: Notification) {
+        if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+            print("❌ [VideoPlayerController] Failed to play to end: \(error)")
+            errorMessage = "Failed to play video: \(error.localizedDescription)"
+        }
     }
     
     override public func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
