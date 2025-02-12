@@ -92,10 +92,17 @@ struct ChangesReviewView: View {
         Task {
             do {
                 try await changesViewModel.acceptChange(change)
-                isLoading = false
+                // Refresh the feed to show the updated video
+                await videoViewModel.fetchVideos(isRefresh: true)
+                await MainActor.run {
+                    isLoading = false
+                    dismiss() // Dismiss after successful update
+                }
             } catch {
-                errorMessage = error.localizedDescription
-                isLoading = false
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
+                }
             }
         }
     }

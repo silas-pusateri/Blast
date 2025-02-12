@@ -30,9 +30,19 @@ struct SuggestChangesView: View {
         }
         
         let timestamp = Int(Date().timeIntervalSince1970)
-        let path = "edited_videos/\(UUID().uuidString)_\(timestamp).mp4"
+        let path = "videos/\(UUID().uuidString)_\(timestamp).mp4"
         
         let downloadURL = try await VideoUploader.shared.uploadVideo(from: editedURL, to: path)
+        print("📹 [SuggestChangesView] Edited video download URL:", downloadURL)
+        
+        // Verify we have a valid HTTPS URL
+        guard let url = URL(string: downloadURL),
+              url.scheme == "https",
+              url.host?.contains("firebasestorage.googleapis.com") == true else {
+            throw NSError(domain: "SuggestChangesView",
+                         code: -1,
+                         userInfo: [NSLocalizedDescriptionKey: "Invalid download URL format"])
+        }
         
         try await changesViewModel.createChange(
             videoId: video.id,
