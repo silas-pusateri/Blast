@@ -2,6 +2,7 @@ import SwiftUI
 import AVKit
 import FirebaseFirestore
 import FirebaseStorage
+import FirebaseAuth
 
 // Video preloading manager
 class VideoPreloadManager {
@@ -54,7 +55,7 @@ class VideoPreloadManager {
                         self.updateRecentVideo(video.id)
                     }
                 } catch {
-                    print("❌ [VideoPreloadManager] Failed to load asset for video \(video.id): \(error)")
+                    print("❌ Failed to load asset for video \(video.id): \(error)")
                 }
             }
         }
@@ -146,7 +147,7 @@ struct VideoView: View {
     @State private var player: AVPlayer?
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var isPlaying = true
+    @State private var isPlaying = false
     @State private var isVisible = false
     @State private var playerTimeObserver: Any?
     @State private var username: String = ""
@@ -184,20 +185,18 @@ struct VideoView: View {
     }
     
     private func loadVideo() {
-        print("📹 [VideoView] Starting loadVideo for videoId: \(video.id), URL: \(video.url)")
-        
         // If the URL hasn't changed, don't reload
         if currentVideoURL == video.url {
-            print("📹 [VideoView] Skipping reload - URL hasn't changed")
             return
         }
         currentVideoURL = video.url
         
         // First check if we have a preloaded video
         if let preloadedPlayer = VideoPreloadManager.shared.getPreloadedPlayer(for: video.id) {
-            print("📹 [VideoView] Using preloaded player for videoId: \(video.id)")
             playerController.player = preloadedPlayer
             playerController.isLoading = false
+            // Ensure video starts paused
+            preloadedPlayer.pause()
             
             // Preload next video
             VideoPreloadManager.shared.preloadNextVideo(currentVideo: video, videos: videoViewModel.videos)
@@ -206,7 +205,6 @@ struct VideoView: View {
         
         // If no preloaded video, load normally
         guard let videoURL = URL(string: video.url) else {
-            print("❌ [VideoView] Failed to create URL from string: \(video.url)")
             playerController.errorMessage = "Invalid video URL"
             playerController.isLoading = false
             return
@@ -214,12 +212,9 @@ struct VideoView: View {
         
         // Check if this is a local file URL
         if videoURL.isFileURL {
-            print("📹 [VideoView] Loading local file from: \(videoURL.path)")
-            
             // Check if file exists
             let fileManager = FileManager.default
             guard fileManager.fileExists(atPath: videoURL.path) else {
-                print("❌ [VideoView] Local video file does not exist at path: \(videoURL.path)")
                 playerController.errorMessage = "Video file not found"
                 playerController.isLoading = false
                 return
@@ -227,22 +222,28 @@ struct VideoView: View {
             
             // Check if file is readable
             guard fileManager.isReadableFile(atPath: videoURL.path) else {
-                print("❌ [VideoView] Local video file is not readable at path: \(videoURL.path)")
                 playerController.errorMessage = "Video file is not accessible"
                 playerController.isLoading = false
                 return
             }
-            
-            // Get file attributes
-            if let attributes = try? fileManager.attributesOfItem(atPath: videoURL.path) {
-                let fileSize = attributes[.size] as? UInt64 ?? 0
-                print("📹 [VideoView] Local video file size: \(fileSize) bytes")
-            }
         }
         
-        print("📹 [VideoView] Creating new player for URL: \(videoURL)")
         // Create and setup player
         playerController.setupPlayer(videoURL)
+    }
+    
+    private func handleVisibilityChanged() {
+        if isVisible {
+            if !isPlaying {
+                playerController.player?.play()
+                isPlaying = true
+            }
+            playerController.player?.isMuted = false
+        } else {
+            playerController.player?.isMuted = true
+            playerController.player?.pause()
+            isPlaying = false
+        }
     }
     
     var body: some View {
@@ -252,28 +253,22 @@ struct VideoView: View {
             if playerController.isLoading {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
-            } else if let error = playerController.errorMessage {
+            } else if let errorMessage = playerController.errorMessage {
                 VStack {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(systemName: "exclamationmark.triangle.fill")
                         .font(.largeTitle)
-                        .foregroundColor(.white)
-                    Text(error)
+                        .foregroundColor(.yellow)
+                    Text(errorMessage)
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
                         .padding()
                 }
             } else if let player = playerController.player {
                 ZStack {
-                    AVPlayerControllerRepresented(player: player)
-                        .disabled(true)
+                    CustomVideoPlayer(player: player)
                         .onAppear {
-                            // Start playing when view appears
-                            player.seek(to: .zero)
-                            // Set initial mute state based on visibility
-                            player.isMuted = !isVisible
-                            if isPlaying {
-                                player.play()
-                            }
+                            isVisible = true
+                            handleVisibilityChanged()
                             
                             // Setup video looping
                             NotificationCenter.default.addObserver(
@@ -287,7 +282,8 @@ struct VideoView: View {
                                 }
                         }
                         .onDisappear {
-                            player.pause()
+                            isVisible = false
+                            handleVisibilityChanged()
                         }
                     
                     // Pause indicator overlay
@@ -307,7 +303,6 @@ struct VideoView: View {
                     isPlaying.toggle()
                     if isPlaying {
                         player.play()
-                        player.isMuted = !isVisible
                     } else {
                         player.pause()
                     }
@@ -374,49 +369,25 @@ struct VideoView: View {
                 }
             }
         }
-        .sheet(isPresented: $isShowingComments) {
-            CommentView(video: video)
-        }
-        .sheet(isPresented: $isShowingChanges) {
-            VideoChangesView(video: video, videoViewModel: videoViewModel)
-        }
-        .onChange(of: video.url) { oldValue, newValue in
-            if oldValue != newValue {
-                loadVideo()
-            }
-        }
         .onAppear {
             loadVideo()
             fetchUsername()
         }
-        .onDisappear {
-            playerController.player?.pause()
+        .onChange(of: isVisible) { newValue in
+            handleVisibilityChanged()
         }
-        // Add visibility detection using GeometryReader
-        .overlay(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(
-                        key: VisibilityPreferenceKey.self,
-                        value: proxy.frame(in: .global).intersects(UIScreen.main.bounds)
-                    )
-                    .onPreferenceChange(VisibilityPreferenceKey.self) { isCurrentlyVisible in
-                        if self.isVisible != isCurrentlyVisible {
-                            // Use DispatchQueue to avoid SwiftUI state update warning
-                            DispatchQueue.main.async {
-                                self.isVisible = isCurrentlyVisible
-                                playerController.player?.isMuted = !isCurrentlyVisible
-                                
-                                if isCurrentlyVisible && self.isPlaying {
-                                    playerController.player?.play()
-                                } else if !isCurrentlyVisible {
-                                    playerController.player?.pause()
-                                }
-                            }
-                        }
-                    }
+        .sheet(isPresented: $isShowingComments) {
+            NavigationView {
+                CommentView(video: video)
             }
-        )
+        }
+        .sheet(isPresented: $isShowingChanges) {
+            if video.userId == Auth.auth().currentUser?.uid {
+                ChangesReviewView(video: video, videoViewModel: videoViewModel)
+            } else {
+                SuggestChangesView(video: video, videoViewModel: videoViewModel)
+            }
+        }
     }
     
     private func toggleLike() {
@@ -429,42 +400,37 @@ struct VideoView: View {
     }
 }
 
-struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
-    let player: AVPlayer?
+// Add CustomVideoPlayer to ensure proper video behavior
+struct CustomVideoPlayer: UIViewControllerRepresentable {
+    let player: AVPlayer
     
     func makeUIViewController(context: Context) -> AVPlayerViewController {
-        print("🎬 [AVPlayerControllerRepresented] Creating AVPlayerViewController")
         let controller = AVPlayerViewController()
         controller.player = player
         controller.showsPlaybackControls = false
         controller.videoGravity = .resizeAspectFill
-        
-        // Log player status
-        if let player = player {
-            print("🎬 [AVPlayerControllerRepresented] Player rate: \(player.rate)")
-            if let currentItem = player.currentItem {
-                print("🎬 [AVPlayerControllerRepresented] Player item status: \(currentItem.status.rawValue)")
-            } else {
-                print("❌ [AVPlayerControllerRepresented] No current item")
-            }
-        } else {
-            print("❌ [AVPlayerControllerRepresented] Player is nil")
-        }
-        
         return controller
     }
     
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        print("🔄 [AVPlayerControllerRepresented] Updating AVPlayerViewController")
+        uiViewController.player = player
+    }
+}
+
+struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
+    let player: AVPlayer?
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = false
+        controller.videoGravity = .resizeAspectFill
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         if uiViewController.player !== player {
             uiViewController.player = player
-            // Log player status after update
-            if let player = player {
-                print("🔄 [AVPlayerControllerRepresented] Updated player rate: \(player.rate)")
-                if let currentItem = player.currentItem {
-                    print("🔄 [AVPlayerControllerRepresented] Updated player item status: \(currentItem.status.rawValue)")
-                }
-            }
         }
     }
 }
@@ -503,7 +469,6 @@ class VideoPlayerController: NSObject, ObservableObject {
     var playerTimeObserver: Any?
     
     func setupPlayer(_ videoURL: URL) {
-        print("🎮 [VideoPlayerController] Setting up player for URL: \(videoURL)")
         cleanup()
         
         // Create an asset options dictionary for better loading behavior
@@ -517,7 +482,6 @@ class VideoPlayerController: NSObject, ObservableObject {
         // Load the asset asynchronously
         Task {
             do {
-                print("🎮 [VideoPlayerController] Loading asset...")
                 // Load duration and tracks to ensure asset is playable
                 _ = try await asset.load(.duration)
                 let tracks = try await asset.load(.tracks)
@@ -532,7 +496,6 @@ class VideoPlayerController: NSObject, ObservableObject {
                 }
                 
                 await MainActor.run {
-                    print("🎮 [VideoPlayerController] Asset loaded successfully")
                     let playerItem = AVPlayerItem(asset: asset)
                     let newPlayer = AVPlayer(playerItem: playerItem)
                     self.player = newPlayer
@@ -548,11 +511,10 @@ class VideoPlayerController: NSObject, ObservableObject {
                     // Add KVO observer for player item status
                     playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.status), options: [.old, .new], context: nil)
                     
-                    print("🎮 [VideoPlayerController] Player setup complete")
                     self.isLoading = false
                 }
             } catch {
-                print("❌ [VideoPlayerController] Failed to load asset: \(error)")
+                print("Failed to load video: \(error.localizedDescription)")
                 await MainActor.run {
                     self.errorMessage = "Failed to load video: \(error.localizedDescription)"
                     self.isLoading = false
@@ -563,7 +525,6 @@ class VideoPlayerController: NSObject, ObservableObject {
     
     @objc private func playerItemFailedToPlay(_ notification: Notification) {
         if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-            print("❌ [VideoPlayerController] Failed to play to end: \(error)")
             errorMessage = "Failed to play video: \(error.localizedDescription)"
         }
     }
@@ -577,48 +538,37 @@ class VideoPlayerController: NSObject, ObservableObject {
                 status = .unknown
             }
             
-            // Handle player item status change
-            print("🎮 [VideoPlayerController] Player item status changed to: \(status.rawValue)")
             switch status {
             case .readyToPlay:
-                print("✅ [VideoPlayerController] Player ready to play")
                 player?.play()
             case .failed:
                 if let error = player?.currentItem?.error {
-                    print("❌ [VideoPlayerController] Player failed with error: \(error)")
+                    errorMessage = "Failed to load video"
                 }
-                errorMessage = "Failed to load video"
             case .unknown:
-                print("⚠️ [VideoPlayerController] Player status unknown")
                 break
             @unknown default:
-                print("⚠️ [VideoPlayerController] Player status: unknown default case")
                 break
             }
         }
     }
     
     func cleanup() {
-        print("🧹 [VideoPlayerController] Starting cleanup")
         if let oldObserver = playerTimeObserver {
-            print("🧹 [VideoPlayerController] Removing time observer")
             player?.removeTimeObserver(oldObserver)
             playerTimeObserver = nil
         }
         
         // Remove KVO observer if needed
         if let currentItem = player?.currentItem {
-            print("🧹 [VideoPlayerController] Removing KVO observer")
             currentItem.removeObserver(self, forKeyPath: #keyPath(AVPlayerItem.status))
         }
         
-        print("🧹 [VideoPlayerController] Pausing and nullifying player")
         player?.pause()
         player = nil
     }
     
     deinit {
-        print("👋 [VideoPlayerController] Deinitializing")
         cleanup()
     }
 } 

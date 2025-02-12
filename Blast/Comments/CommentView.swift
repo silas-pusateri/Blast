@@ -20,13 +20,13 @@ struct CommentView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 if viewModel.isLoading && viewModel.comments.isEmpty {
                     ProgressView()
                         .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 0, pinnedViews: []) {
                             if !viewModel.comments.isEmpty {
                                 ForEach(viewModel.comments) { comment in
                                     CommentRow(comment: comment, video: video)
@@ -59,11 +59,9 @@ struct CommentView: View {
                                 .padding(.top, 100)
                             }
                         }
+                        .padding(.top, 1) // Minimal padding to prevent overlap
                     }
-                    .refreshable {
-                        print("Refreshing comments...") // Debug print
-                        await viewModel.fetchComments(for: video.id, isRefresh: true)
-                    }
+                    .scrollDismissesKeyboard(.immediately)
                 }
                 
                 // Error message

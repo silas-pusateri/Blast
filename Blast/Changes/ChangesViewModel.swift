@@ -81,23 +81,26 @@ class ChangesViewModel: ObservableObject {
                 try await storageRef.putData(data, metadata: metadata)
                 print("📹 Successfully uploaded edited video to storage")
                 
-                // Add a small delay to ensure the file is fully processed
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                // Add a longer initial delay to ensure the file is fully processed
+                try await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay
                 
-                // Try to get the download URL with retries
+                // Try to get the download URL with retries and exponential backoff
                 var downloadURL: URL?
                 var retryCount = 0
-                let maxRetries = 3
+                let maxRetries = 5
                 
                 while downloadURL == nil && retryCount < maxRetries {
                     do {
                         downloadURL = try await storageRef.downloadURL()
                         print("📹 Got download URL on attempt \(retryCount + 1): \(downloadURL?.absoluteString ?? "nil")")
+                        break
                     } catch {
                         retryCount += 1
                         if retryCount < maxRetries {
                             print("📹 Retry \(retryCount)/\(maxRetries) getting download URL: \(error.localizedDescription)")
-                            try await Task.sleep(nanoseconds: UInt64(retryCount) * 1_000_000_000) // Exponential backoff
+                            // Exponential backoff: 2, 4, 8, 16 seconds
+                            let delaySeconds = UInt64(pow(2.0, Double(retryCount))) * 1_000_000_000
+                            try await Task.sleep(nanoseconds: delaySeconds)
                         } else {
                             throw error
                         }
