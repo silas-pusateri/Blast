@@ -14,6 +14,7 @@ import SwiftUI
 @MainActor
 class CommentViewModel: ObservableObject {
     @Published var comments: [Comment] = []
+    @Published var replies: [String: [Comment]] = [:] // Dictionary to store replies by parent comment ID
     @Published var isLoading = false
     @Published var error: Error?
     private var lastDocument: QueryDocumentSnapshot?
@@ -35,7 +36,6 @@ class CommentViewModel: ObservableObject {
         do {
             var query = db.collection("comments")
                 .whereField("videoId", isEqualTo: videoId)
-                .whereField("parentCommentId", isEqualTo: NSNull())
                 .order(by: "timestamp", descending: true)
                 .limit(to: pageSize)
             
@@ -45,13 +45,6 @@ class CommentViewModel: ObservableObject {
             
             let querySnapshot = try await query.getDocuments()
             lastDocument = querySnapshot.documents.last
-            
-            // Debug print raw documents
-            print("Raw documents from Firestore:")
-            for doc in querySnapshot.documents {
-                print("Document ID: \(doc.documentID)")
-                print("Data: \(doc.data())")
-            }
             
             let newComments = querySnapshot.documents.compactMap { Comment(document: $0) }
             print("Fetched \(newComments.count) comments")
@@ -85,8 +78,7 @@ class CommentViewModel: ObservableObject {
             "userId": userId,
             "text": text,
             "timestamp": FieldValue.serverTimestamp(),
-            "likes": 0,
-            "parentCommentId": NSNull()
+            "likes": 0
         ]
         
         print("Creating comment with data: \(commentData)")  // Debug print
@@ -112,8 +104,7 @@ class CommentViewModel: ObservableObject {
             userId: userId,
             text: text,
             timestamp: Date(),
-            likes: 0,
-            parentCommentId: nil
+            likes: 0
         )
         
         // Add to local array at the beginning since we're sorting by timestamp descending
@@ -132,22 +123,23 @@ class CommentViewModel: ObservableObject {
             throw NSError(domain: "CommentError", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])
         }
         
-        // Create the reply document reference first
-        let replyRef = db.collection("comments").document()
+        // Create the reply in the subcollection
+        let replyRef = db.collection("comments")
+            .document(parentCommentId)
+            .collection("replies")
+            .document()
         
         let replyData: [String: Any] = [
-            "videoId": videoId,
             "userId": userId,
             "text": text,
             "timestamp": FieldValue.serverTimestamp(),
-            "likes": 0,
-            "parentCommentId": parentCommentId
+            "likes": 0
         ]
         
         // Start a batch write
         let batch = db.batch()
         
-        // Add reply
+        // Add reply to subcollection
         batch.setData(replyData, forDocument: replyRef)
         
         // Update video's comment count
@@ -158,15 +150,17 @@ class CommentViewModel: ObservableObject {
         try await batch.commit()
     }
     
-    func toggleLike(for comment: Comment) async throws {
+    func toggleLike(for comment: Comment, isReply: Bool = false, parentCommentId: String? = nil) async throws {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
-        let likeRef = db.collection("comments")
-            .document(comment.id)
+        let commentPath = isReply ? 
+            db.collection("comments").document(parentCommentId!).collection("replies").document(comment.id) :
+            db.collection("comments").document(comment.id)
+            
+        let likeRef = commentPath
             .collection("likes")
             .document(userId)
         
-        let commentRef = db.collection("comments").document(comment.id)
         let likeDoc = try await likeRef.getDocument()
         
         // Start a batch write
@@ -175,25 +169,52 @@ class CommentViewModel: ObservableObject {
         if likeDoc.exists {
             // Unlike
             batch.deleteDocument(likeRef)
-            batch.updateData(["likes": FieldValue.increment(Int64(-1))], forDocument: commentRef)
+            batch.updateData(["likes": FieldValue.increment(Int64(-1))], forDocument: commentPath)
             
             // Commit the batch
             try await batch.commit()
             
-            if let index = comments.firstIndex(where: { $0.id == comment.id }) {
+            if isReply {
+                if let replyIndex = replies[parentCommentId!]?.firstIndex(where: { $0.id == comment.id }) {
+                    replies[parentCommentId!]?[replyIndex].likes -= 1
+                }
+            } else if let index = comments.firstIndex(where: { $0.id == comment.id }) {
                 comments[index].likes -= 1
             }
         } else {
             // Like
             batch.setData(["timestamp": FieldValue.serverTimestamp()], forDocument: likeRef)
-            batch.updateData(["likes": FieldValue.increment(Int64(1))], forDocument: commentRef)
+            batch.updateData(["likes": FieldValue.increment(Int64(1))], forDocument: commentPath)
             
             // Commit the batch
             try await batch.commit()
             
-            if let index = comments.firstIndex(where: { $0.id == comment.id }) {
+            if isReply {
+                if let replyIndex = replies[parentCommentId!]?.firstIndex(where: { $0.id == comment.id }) {
+                    replies[parentCommentId!]?[replyIndex].likes += 1
+                }
+            } else if let index = comments.firstIndex(where: { $0.id == comment.id }) {
                 comments[index].likes += 1
             }
+        }
+    }
+    
+    func fetchReplies(for parentCommentId: String) async {
+        do {
+            let querySnapshot = try await db.collection("comments")
+                .document(parentCommentId)
+                .collection("replies")
+                .order(by: "timestamp", descending: false)
+                .getDocuments()
+            
+            let replies = querySnapshot.documents.compactMap { Comment(document: $0) }
+            
+            await MainActor.run {
+                self.replies[parentCommentId] = replies
+            }
+        } catch {
+            print("Error fetching replies: \(error)")
+            self.error = error
         }
     }
 }

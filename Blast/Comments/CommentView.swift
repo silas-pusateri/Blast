@@ -30,6 +30,7 @@ struct CommentView: View {
                             if !viewModel.comments.isEmpty {
                                 ForEach(viewModel.comments) { comment in
                                     CommentRow(comment: comment, video: video)
+                                        .environmentObject(viewModel)
                                         .padding(.horizontal)
                                     
                                     Divider()

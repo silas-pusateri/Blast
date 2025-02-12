@@ -25,7 +25,7 @@ struct VideoItemView: View {
     @State private var showingOptionsSheet = false
     
     var body: some View {
-        VideoView(video: video)
+        VideoView(video: video, videoViewModel: videoViewModel)
             .frame(
                 width: geometry.size.width,
                 height: geometry.size.height
@@ -80,12 +80,13 @@ struct VideoOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingSuggestChanges = false
     @State private var showingChangesReview = false
+    @State private var showingProfile = false
     
     var body: some View {
         NavigationView {
             List {
                 Button {
-                    // Profile action will be implemented later
+                    showingProfile = true
                     showingOptionsSheet = false
                 } label: {
                     Label("Profile", systemImage: "person.circle")
@@ -125,35 +126,18 @@ struct VideoOptionsSheet: View {
                         }
                     }
                 }
-                
-                Button(role: .destructive) {
-                    showingLogoutConfirmation = true
-                    showingOptionsSheet = false
-                } label: {
-                    Label {
-                        Text("Logout")
-                            .foregroundColor(.red)
-                    } icon: {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .foregroundColor(.red)
-                    }
-                }
             }
-            .navigationTitle("Options")
+            .navigationTitle("Video Options")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        showingOptionsSheet = false
-                    }
-                }
-            }
         }
         .sheet(isPresented: $showingSuggestChanges) {
             SuggestChangesView(video: video, videoViewModel: videoViewModel)
         }
         .sheet(isPresented: $showingChangesReview) {
             ChangesReviewView(video: video, videoViewModel: videoViewModel)
+        }
+        .sheet(isPresented: $showingProfile) {
+            ProfileView(userId: video.userId)
         }
     }
 }
@@ -216,6 +200,14 @@ struct VideoScrollView: View {
                     onRefresh: {
                         currentVideoIndex = 0
                         await videoViewModel.fetchVideos(isRefresh: true)
+                        
+                        // Preload first two videos after refresh
+                        if let firstVideo = videoViewModel.videos.first {
+                            VideoPreloadManager.shared.preloadVideo(video: firstVideo)
+                            if let secondVideo = videoViewModel.videos.dropFirst().first {
+                                VideoPreloadManager.shared.preloadVideo(video: secondVideo)
+                            }
+                        }
                         isRefreshing = false
                     }
                 ) {

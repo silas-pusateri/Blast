@@ -139,7 +139,7 @@ class UsernameCache {
 
 struct VideoView: View {
     let video: Video
-    @EnvironmentObject private var videoViewModel: VideoViewModel
+    let videoViewModel: VideoViewModel
     @State private var isShowingComments = false
     @State private var isLiked = false
     @State private var likes: Int
@@ -154,8 +154,9 @@ struct VideoView: View {
     @StateObject private var playerController = VideoPlayerController()
     @State private var isShowingChanges = false
 
-    init(video: Video) {
+    init(video: Video, videoViewModel: VideoViewModel) {
         self.video = video
+        self.videoViewModel = videoViewModel
         self._likes = State(initialValue: video.likes)
     }
     
@@ -470,14 +471,17 @@ struct AVPlayerControllerRepresented: UIViewControllerRepresentable {
 
 struct VideoView_Previews: PreviewProvider {
     static var previews: some View {
-        VideoView(video: Video(
-            id: "1",
-            url: "https://example.com/video1.mp4",
-            caption: "A beautiful sunset",
-            userId: "user1",
-            likes: 100,
-            comments: 50
-        ))
+        VideoView(
+            video: Video(
+                id: "1",
+                url: "https://example.com/video1.mp4",
+                caption: "A beautiful sunset",
+                userId: "user1",
+                likes: 100,
+                comments: 50
+            ),
+            videoViewModel: VideoViewModel()
+        )
         .environmentObject(AuthenticationState())
     }
 }
