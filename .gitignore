@@ -47,3 +47,4 @@ Pods/
 
 .vscode/settings.json
 Blast/Config.plist
+Blast/Secrets.swift
