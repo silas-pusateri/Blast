@@ -1,0 +1,38 @@
+import IMGLYEditor
+import SwiftUI
+
+final class VideoInteractorBehavior: InteractorBehavior {
+    func loadScene(_ context: InteractorContext, with _: EdgeInsets?) async throws {
+        try loadSettings(context)
+        
+        // Configure touch interactions
+        try context.engine.editor.setSettingBool("touch/singlePointPanning", value: false)
+        try context.engine.editor.setSettingBool("touch/dragStartCanSelect", value: false)
+        try context.engine.editor.setSettingEnum("touch/pinchAction", value: "Scale")
+        try context.engine.editor.setSettingEnum("touch/rotateAction", value: "Rotate")
+        
+        // Configure control gizmo settings
+        try context.engine.editor.setSettingBool("controlGizmo/showCropHandles", value: true)
+        try context.engine.editor.setSettingBool("controlGizmo/showMoveHandles", value: false)
+        try context.engine.editor.setSettingBool("controlGizmo/showResizeHandles", value: true)
+        try context.engine.editor.setSettingBool("controlGizmo/showRotateHandles", value: false)
+        try context.engine.editor.setSettingBool("controlGizmo/showScaleHandles", value: false)
+        
+        // Configure page appearance
+        try context.engine.editor.setSettingColor(
+            "page/innerBorderColor",
+            color: .init(cgColor: UIColor.lightGray.withAlphaComponent(0.5).cgColor)!
+        )
+        
+        // Make sure to set all settings before calling `onCreate` callback
+        try await context.interactor.config.callbacks.onCreate(context.engine)
+    }
+    
+    func rootBottomBarItems(_: InteractorContext) throws -> [RootBottomBarItem] { [] }
+    
+    func updateState(_: InteractorContext) throws {}
+}
+
+extension InteractorBehavior where Self == VideoInteractorBehavior {
+    static var video: Self { Self() }
+} 

@@ -10,7 +10,7 @@ struct EditorView: View {
     
     private let settings = EngineSettings(
         license: Secrets.licenseKey,
-        userID: "<your unique user id>"
+        userID: UUID().uuidString  // Generate unique user ID per session
     )
     
     init(videoURL: URL, isSuggestMode: Bool = false, onSave: @escaping (URL, [String: Any]?) -> Void) {
@@ -29,17 +29,42 @@ struct EditorView: View {
     private func createMetadata(from outputURL: URL) -> [String: Any] {
         return [
             "editedAt": Date().timeIntervalSince1970,
-            "originalURL": videoURL.absoluteString
+            "originalURL": videoURL.absoluteString,
+            "isEditedVersion": true
         ]
     }
     
     var editor: some View {
         VideoEditor(settings)
+            .imgly.onCreate { engine in
+                try await engine.scene.load(from: videoURL)
+            }
+            .imgly.onExport { engine in
+                if let outputURL = try? await engine.scene.export() {
+                    let metadata = createMetadata(from: outputURL)
+                    onSave(outputURL, metadata)
+                    dismiss()
+                }
+            }
     }
     
     var body: some View {
-        ModalEditor {
+        NavigationView {
             editor
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarItems(
+                    leading: Button("Cancel") {
+                        dismiss()
+                    },
+                    trailing: EmptyView() // Export button is handled by VideoEditor
+                )
         }
     }
+}
+
+#Preview {
+    EditorView(
+        videoURL: URL(string: "https://example.com/video.mp4")!,
+        onSave: { _, _ in }
+    )
 }
