@@ -1,6 +1,8 @@
+@_spi(Unstable) @_spi(Internal) import IMGLYEditor
 import IMGLYVideoEditor
 import SwiftUI
 import AVFoundation
+
 
 struct EditorView: View {
     @Environment(\.dismiss) var dismiss
@@ -35,18 +37,19 @@ struct EditorView: View {
     }
     
     var editor: some View {
-        VideoEditor(settings)
-            .imgly.onCreate { engine in
-                try await engine.scene.load(from: videoURL)
+    VideoEditor(settings)
+        .imgly.onCreate { engine in
+            try await engine.scene.load(from: videoURL)
+        }
+        .imgly.onExport { engine, _ in
+            if let outputURL = try? await engine.scene.export() {
+                let metadata = createMetadata(from: outputURL)
+                onSave(outputURL, metadata)
+                dismiss()
             }
-            .imgly.onExport { engine in
-                if let outputURL = try? await engine.scene.export() {
-                    let metadata = createMetadata(from: outputURL)
-                    onSave(outputURL, metadata)
-                    dismiss()
-                }
-            }
+        }
     }
+
     
     var body: some View {
         NavigationView {
