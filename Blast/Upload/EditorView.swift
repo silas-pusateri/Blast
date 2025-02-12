@@ -3,7 +3,6 @@ import IMGLYVideoEditor
 import SwiftUI
 import AVFoundation
 
-
 struct EditorView: View {
     @Environment(\.dismiss) var dismiss
     let videoURL: URL
@@ -36,31 +35,21 @@ struct EditorView: View {
         ]
     }
     
-    var editor: some View {
-    VideoEditor(settings)
-        .imgly.onCreate { engine in
-            try await engine.scene.load(from: videoURL)
-        }
-        .imgly.onExport { engine, _ in
-            if let outputURL = try? await engine.scene.export() {
-                let metadata = createMetadata(from: outputURL)
-                onSave(outputURL, metadata)
-                dismiss()
-            }
-        }
-    }
-
-    
     var body: some View {
         NavigationView {
-            editor
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationBarItems(
-                    leading: Button("Cancel") {
-                        dismiss()
-                    },
-                    trailing: EmptyView() // Export button is handled by VideoEditor
-                )
+            VideoEditor(settings) { outputURL in
+                let metadata = createMetadata(from: outputURL)
+                onSave(outputURL, metadata)
+            }
+            .imgly.onCreate { engine in
+                try await engine.scene.load(from: videoURL)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("Cancel") {
+                    dismiss()
+                }
+            )
         }
     }
 }

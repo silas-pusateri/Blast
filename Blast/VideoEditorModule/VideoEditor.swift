@@ -8,12 +8,18 @@ public struct VideoEditor: View {
     
     @Environment(\.imglyOnCreate) private var onCreate
     @Environment(\.imglyDock) private var dock
-    private let settings: EngineSettings
+    @Environment(\.dismiss) private var dismiss
     
-    /// Creates a video editor with settings.
-    /// - Parameter settings: The settings to initialize the underlying engine.
-    public init(_ settings: EngineSettings) {
+    private let settings: EngineSettings
+    private let onExport: ((URL) -> Void)?
+    
+    /// Creates a video editor with settings and optional export handler
+    /// - Parameters:
+    ///   - settings: The settings to initialize the underlying engine
+    ///   - onExport: Optional callback when video is exported
+    public init(_ settings: EngineSettings, onExport: ((URL) -> Void)? = nil) {
         self.settings = settings
+        self.onExport = onExport
     }
     
     public var body: some View {
@@ -35,6 +41,12 @@ public struct VideoEditor: View {
                     return
                 }
                 try await onCreate(engine)
+            }
+            .imgly.onExport { engine, _ in
+                if let outputURL = try? await engine.scene.export() {
+                    onExport?(outputURL)
+                    dismiss()
+                }
             }
             .imgly.dock { context in
                 if let dock {
