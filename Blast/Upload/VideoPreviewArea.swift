@@ -15,8 +15,8 @@ struct VideoPreviewArea: View {
     @Binding var showingCameraView: Bool
     @Binding var photoPickerItem: PhotosPickerItem?
     @Binding var isCaptionFocused: Bool
+    @Binding var showingEditor: Bool
     @State private var player: AVPlayer?
-    @State private var showingEditor = false
     @State private var isPreviewReady = false
     @State private var previewError: String?
     
@@ -136,7 +136,11 @@ struct VideoPreviewArea: View {
                 }
             } else {
                 // If no video selected, show the source selection UI
-                VideoSourceSelectionView(showingCameraView: $showingCameraView, photoPickerItem: $photoPickerItem)
+                VideoSourceSelectionView(
+                    showingCameraView: $showingCameraView,
+                    photoPickerItem: $photoPickerItem,
+                    showingEditor: $showingEditor
+                )
             }
         }
         .onChange(of: selectedVideo) { oldValue, newValue in

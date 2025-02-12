@@ -12,6 +12,7 @@ import PhotosUI
 struct VideoSourceSelectionView: View {
     @Binding var showingCameraView: Bool
     @Binding var photoPickerItem: PhotosPickerItem?
+    @Binding var showingEditor: Bool
     
     var body: some View {
         GeometryReader { geometry in
@@ -35,22 +36,20 @@ struct VideoSourceSelectionView: View {
                         .cornerRadius(16)
                     }
                     
-                    // Gallery Button
-                    PhotosPicker(
-                        selection: $photoPickerItem,
-                        matching: .videos,
-                        photoLibrary: .shared()
-                    ) {
+                    // Create Edit Button
+                    Button(action: {
+                        showingEditor = true
+                    }) {
                         VStack(spacing: 12) {
-                            Image(systemName: "photo.fill")
+                            Image(systemName: "wand.and.stars")
                                 .font(.system(size: 32))
-                            Text("Gallery")
+                            Text("Create Edit")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
                         .frame(width: 140, height: 140)
-                        .background(Color.black)
+                        .background(Color.purple)
                         .cornerRadius(16)
                     }
                 }

@@ -10,6 +10,7 @@ import PhotosUI
 import FirebaseStorage
 import FirebaseFirestore
 import FirebaseAuth
+import IMGLYVideoEditor
 
 
 struct UploadView: View {
@@ -19,6 +20,7 @@ struct UploadView: View {
     @State private var selectedVideo: URL?
     @State private var showingVideoPicker = false
     @State private var showingCameraView = false
+    @State private var showingEditor = false
     @State private var caption = ""
     @State private var isGeneratingCaption = false
     @State private var photoPickerItem: PhotosPickerItem?
@@ -49,7 +51,8 @@ struct UploadView: View {
                     isLoadingVideo: $isLoadingVideo,
                     showingCameraView: $showingCameraView,
                     photoPickerItem: $photoPickerItem,
-                    isCaptionFocused: $isCaptionFocused
+                    isCaptionFocused: $isCaptionFocused,
+                    showingEditor: $showingEditor
                 )
                 
                 // 2) Caption input (with AI generation)
@@ -140,6 +143,14 @@ struct UploadView: View {
         }
         .fullScreenCover(isPresented: $showingCameraView) {
             CameraView(selectedVideo: $selectedVideo)
+        }
+        .fullScreenCover(isPresented: $showingEditor) {
+            ModalEditor {
+                VideoEditor(EngineSettings(
+                    license: Secrets.licenseKey,
+                    userID: "<your unique user id>"
+                ))
+            }
         }
         .onChange(of: photoPickerItem) { oldValue, newValue in
             Task {
