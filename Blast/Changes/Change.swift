@@ -28,10 +28,9 @@ struct Change: Identifiable {
         self.diffMetadata = diffMetadata
     }
     
-    init?(document: DocumentSnapshot) {
+    init?(document: DocumentSnapshot, videoId: String) {
         guard 
             let data = document.data(),
-            let videoId = data["videoId"] as? String,
             let userId = data["userId"] as? String,
             let timestamp = (data["timestamp"] as? Timestamp)?.dateValue(),
             let statusRaw = data["status"] as? String,

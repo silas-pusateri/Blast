@@ -19,7 +19,6 @@ class ChangesViewModel: ObservableObject {
         }
         
         let data: [String: Any] = [
-            "videoId": videoId,
             "userId": userId,
             "timestamp": FieldValue.serverTimestamp(),
             "status": Change.ChangeStatus.open.rawValue,
@@ -28,42 +27,123 @@ class ChangesViewModel: ObservableObject {
             "diffMetadata": diffMetadata as Any
         ]
         
-        try await db.collection("changes").addDocument(data: data)
+        // Create the change in the video's changes subcollection
+        try await db.collection("videos")
+            .document(videoId)
+            .collection("changes")
+            .addDocument(data: data)
     }
     
     func fetchChanges(videoId: String) async throws {
-        let snapshot = try await db.collection("changes")
-            .whereField("videoId", isEqualTo: videoId)
+        let snapshot = try await db.collection("videos")
+            .document(videoId)
+            .collection("changes")
             .order(by: "timestamp", descending: true)
             .getDocuments()
         
-        changes = snapshot.documents.compactMap { Change(document: $0) }
+        changes = snapshot.documents.compactMap { Change(document: $0, videoId: videoId) }
     }
     
     func acceptChange(_ change: Change) async throws {
+        print("📹 Starting to accept change with ID: \(change.id)")
+        
         // First update the change status
         try await updateChangeStatus(change, newStatus: .accepted)
         
         // Then update the video with the new URL if available
         if let editUrl = change.editUrl {
-            // Update the video URL in both Firestore and the local view model
-            try await videoViewModel.updateVideoURL(videoId: change.videoId, newURL: editUrl)
+            print("📹 Processing edit URL: \(editUrl)")
             
-            // Get the current video data to find the old URL
-            let videoRef = db.collection("videos").document(change.videoId)
-            let videoDoc = try await videoRef.getDocument()
+            // Download the edited video data asynchronously
+            guard let url = URL(string: editUrl) else {
+                throw NSError(domain: "ChangesViewModel", code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "Invalid edit URL"])
+            }
             
-            // Clean up the old video file if it exists
-            if let oldUrl = videoDoc.data()?["videoUrl"] as? String,
-               let storagePath = URL(string: oldUrl)?.path.components(separatedBy: "o/").last?.removingPercentEncoding {
+            print("📹 Starting async download of edited video")
+            let (data, _) = try await URLSession.shared.data(from: url)
+            print("📹 Successfully downloaded edited video data")
+            
+            // Generate a new unique path for the accepted edit
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let filename = "\(UUID().uuidString)_accepted_\(timestamp).mp4"
+            let storagePath = "videos/\(filename)"
+            print("📹 Generated new storage path: \(storagePath)")
+            
+            do {
+                // Upload the edited video to Firebase Storage
                 let storage = Storage.storage()
-                let oldRef = storage.reference().child(storagePath)
-                try await oldRef.delete()
+                let storageRef = storage.reference().child(storagePath)
+                
+                // Upload the data
+                let metadata = StorageMetadata()
+                metadata.contentType = "video/mp4"
+                try await storageRef.putData(data, metadata: metadata)
+                print("📹 Successfully uploaded edited video to storage")
+                
+                // Add a small delay to ensure the file is fully processed
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                
+                // Try to get the download URL with retries
+                var downloadURL: URL?
+                var retryCount = 0
+                let maxRetries = 3
+                
+                while downloadURL == nil && retryCount < maxRetries {
+                    do {
+                        downloadURL = try await storageRef.downloadURL()
+                        print("📹 Got download URL on attempt \(retryCount + 1): \(downloadURL?.absoluteString ?? "nil")")
+                    } catch {
+                        retryCount += 1
+                        if retryCount < maxRetries {
+                            print("📹 Retry \(retryCount)/\(maxRetries) getting download URL: \(error.localizedDescription)")
+                            try await Task.sleep(nanoseconds: UInt64(retryCount) * 1_000_000_000) // Exponential backoff
+                        } else {
+                            throw error
+                        }
+                    }
+                }
+                
+                guard let newDownloadURL = downloadURL else {
+                    throw NSError(domain: "ChangesViewModel", code: 3,
+                                userInfo: [NSLocalizedDescriptionKey: "Failed to get download URL after \(maxRetries) attempts"])
+                }
+                
+                // Get the original video data
+                let firestoreRef = db.collection("videos").document(change.videoId)
+                let videoDoc = try await firestoreRef.getDocument()
+                guard let videoData = videoDoc.data() else {
+                    throw NSError(domain: "ChangesViewModel", code: 4,
+                                userInfo: [NSLocalizedDescriptionKey: "Failed to get original video data"])
+                }
+                
+                // Create a new video document with the edited URL
+                let newVideoData: [String: Any] = [
+                    "videoUrl": newDownloadURL.absoluteString,
+                    "caption": videoData["caption"] as? String ?? "",
+                    "userId": videoData["userId"] as? String ?? "",
+                    "likes": 0,
+                    "comments": 0,
+                    "timestamp": FieldValue.serverTimestamp(),
+                    "isEdited": true,
+                    "originalVideoId": change.videoId
+                ]
+                
+                // Add the new video document
+                try await db.collection("videos").addDocument(data: newVideoData)
+                print("📹 Created new video entry with edited URL")
+                
+                // Refresh the video list to show the new entry
+                await videoViewModel.fetchVideos(isRefresh: true)
+            } catch {
+                print("📹 Error during storage operations: \(error.localizedDescription)")
+                throw error
             }
         }
         
         // Refresh changes
         try await fetchChanges(videoId: change.videoId)
+        print("📹 Completed accepting change")
     }
     
     func rejectChange(_ change: Change) async throws {
@@ -82,7 +162,11 @@ class ChangesViewModel: ObservableObject {
     }
     
     private func updateChangeStatus(_ change: Change, newStatus: Change.ChangeStatus) async throws {
-        let changeRef = db.collection("changes").document(change.id)
+        let changeRef = db.collection("videos")
+            .document(change.videoId)
+            .collection("changes")
+            .document(change.id)
+        
         try await changeRef.updateData([
             "status": newStatus.rawValue
         ])
