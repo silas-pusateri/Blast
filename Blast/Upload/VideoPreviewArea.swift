@@ -19,6 +19,7 @@ struct VideoPreviewArea: View {
     @State private var showingEditor = false
     @State private var isPreviewReady = false
     @State private var previewError: String?
+    @State private var aspectRatio: CGFloat = 9/16  // Default aspect ratio
     
     private func setupVideoPreview(for url: URL) {
         print("🎥 [VideoPreviewArea] Setting up preview for URL: \(url)")
@@ -38,7 +39,7 @@ struct VideoPreviewArea: View {
                 let tracks = try await asset.load(.tracks)
                 
                 // Verify we have video tracks
-                guard tracks.contains(where: { $0.mediaType == .video }) else {
+                guard let videoTrack = tracks.first(where: { $0.mediaType == .video }) else {
                     print("❌ [VideoPreviewArea] No video tracks found")
                     await MainActor.run {
                         previewError = "Invalid video file format"
@@ -47,8 +48,13 @@ struct VideoPreviewArea: View {
                     return
                 }
                 
+                // Get video dimensions and calculate aspect ratio
+                let naturalSize = try await videoTrack.load(.naturalSize)
+                let videoAspectRatio = naturalSize.width / naturalSize.height
+                
                 await MainActor.run {
-                    print("🎥 [VideoPreviewArea] Creating player")
+                    self.aspectRatio = videoAspectRatio
+                    print("🎥 [VideoPreviewArea] Creating player with aspect ratio: \(videoAspectRatio)")
                     let playerItem = AVPlayerItem(asset: asset)
                     let newPlayer = AVPlayer(playerItem: playerItem)
                     self.player = newPlayer
@@ -81,7 +87,7 @@ struct VideoPreviewArea: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.white.opacity(0.2))
-                        .aspectRatio(9/16, contentMode: .fit)
+                        .aspectRatio(aspectRatio, contentMode: .fit)
                         .padding(.horizontal)
                     
                     if isLoadingVideo {
@@ -105,7 +111,7 @@ struct VideoPreviewArea: View {
                             ZStack(alignment: .topTrailing) {
                                 if let player = player {
                                     VideoPlayer(player: player)
-                                        .aspectRatio(9/16, contentMode: .fit)
+                                        .aspectRatio(aspectRatio, contentMode: .fit)
                                         .cornerRadius(12)
                                         .padding(.horizontal)
                                 }
