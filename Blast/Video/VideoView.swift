@@ -331,9 +331,10 @@ struct VideoView: View {
                         VStack(spacing: 20) {
                             Button(action: toggleLike) {
                                 VStack {
-                                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                                    Image(systemName: isLiked ? "heart.fill" : "heart.fill")
                                         .foregroundColor(isLiked ? .red : .white)
                                         .font(.system(size: 28))
+                                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                                     
                                     Text("\(likes)")
                                         .font(.caption)
@@ -343,9 +344,10 @@ struct VideoView: View {
                             
                             Button(action: { isShowingComments = true }) {
                                 VStack {
-                                    Image(systemName: "bubble.right")
+                                    Image(systemName: "bubble.right.fill")
                                         .font(.system(size: 28))
                                         .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                                     
                                     Text("\(video.comments)")
                                         .font(.caption)
@@ -355,9 +357,10 @@ struct VideoView: View {
                             
                             Button(action: { isShowingChanges = true }) {
                                 VStack {
-                                    Image(systemName: "pencil.circle")
+                                    Image(systemName: "pencil.circle.fill")
                                         .font(.system(size: 28))
                                         .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                                     
                                     Text("Changes")
                                         .font(.caption)
