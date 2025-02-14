@@ -1,5 +1,5 @@
 {
-  "originHash" : "d2a3af7c5cfb27650ecbbc70551e2af99ff741e72b3b122fba01775cc33d3e78",
+  "originHash" : "cb1c9cc84f4b44106e58ac2bf379359cdf34942086cfd0e725a7001ccb762266",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -74,6 +74,15 @@
       }
     },
     {
+      "identity" : "imglyengine-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/imgly/IMGLYEngine-swift.git",
+      "state" : {
+        "revision" : "11f0b54c54a1cec9919ca484fbc392feadc6be83",
+        "version" : "1.44.0"
+      }
+    },
+    {
       "identity" : "imglykit-sp",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/imgly/imglykit-sp.git",
@@ -83,12 +92,30 @@
       }
     },
     {
+      "identity" : "imglyui-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/imgly/IMGLYUI-swift",
+      "state" : {
+        "revision" : "a283e357010204fbab9e73ff68ef62ae1a2ad1fb",
+        "version" : "1.44.0"
+      }
+    },
+    {
       "identity" : "interop-ios-for-google-sdks",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/interop-ios-for-google-sdks.git",
       "state" : {
         "revision" : "2d12673670417654f08f5f90fdd62926dc3a2648",
         "version" : "100.0.0"
+      }
+    },
+    {
+      "identity" : "kingfisher",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/onevcat/Kingfisher.git",
+      "state" : {
+        "revision" : "2ef543ee21d63734e1c004ad6c870255e8716c50",
+        "version" : "7.12.0"
       }
     },
     {
@@ -125,6 +152,15 @@
       "state" : {
         "revision" : "ebc7251dd5b37f627c93698e4374084d98409633",
         "version" : "1.28.2"
+      }
+    },
+    {
+      "identity" : "swiftui-introspect",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/siteline/SwiftUI-Introspect.git",
+      "state" : {
+        "revision" : "807f73ce09a9b9723f12385e592b4e0aaebd3336",
+        "version" : "1.3.0"
       }
     },
     {

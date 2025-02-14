@@ -8,6 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		EF73C20E2D532CB000D7264A /* VideoEditorSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EF73C20D2D532CB000D7264A /* VideoEditorSDK */; };
+		EF8D4EDA2D5818470099CF2C /* IMGLYCamera in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4ED92D5818470099CF2C /* IMGLYCamera */; };
+		EF8D4EDC2D5818470099CF2C /* IMGLYUI in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EDB2D5818470099CF2C /* IMGLYUI */; };
+		EF8D4EDE2D5818470099CF2C /* IMGLYVideoEditor in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EDD2D5818470099CF2C /* IMGLYVideoEditor */; };
+		EF8D4EE42D5824200099CF2C /* IMGLYApparelEditor in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EE32D5824200099CF2C /* IMGLYApparelEditor */; };
+		EF8D4EE62D5824200099CF2C /* IMGLYDesignEditor in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EE52D5824200099CF2C /* IMGLYDesignEditor */; };
+		EF8D4EE82D5824200099CF2C /* IMGLYPhotoEditor in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EE72D5824200099CF2C /* IMGLYPhotoEditor */; };
+		EF8D4EEA2D5824200099CF2C /* IMGLYPostcardEditor in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EE92D5824200099CF2C /* IMGLYPostcardEditor */; };
+		EF8D4EED2D5834E20099CF2C /* IMGLYEngine in Frameworks */ = {isa = PBXBuildFile; productRef = EF8D4EEC2D5834E20099CF2C /* IMGLYEngine */; };
 		EFF82A0B2D516A9E0020728E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0A2D516A9E0020728E /* FirebaseAuth */; };
 		EFF82A0D2D516A9E0020728E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0C2D516A9E0020728E /* FirebaseCore */; };
 		EFF82A0F2D516A9E0020728E /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = EFF82A0E2D516A9E0020728E /* FirebaseDatabase */; };
@@ -76,11 +84,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				EFF82A0F2D516A9E0020728E /* FirebaseDatabase in Frameworks */,
+				EF8D4EE42D5824200099CF2C /* IMGLYApparelEditor in Frameworks */,
 				EF73C20E2D532CB000D7264A /* VideoEditorSDK in Frameworks */,
 				EFF82A152D516A9E0020728E /* FirebaseVertexAI in Frameworks */,
+				EF8D4EEA2D5824200099CF2C /* IMGLYPostcardEditor in Frameworks */,
 				EFF82A112D516A9E0020728E /* FirebaseFirestore in Frameworks */,
+				EF8D4EDE2D5818470099CF2C /* IMGLYVideoEditor in Frameworks */,
 				EFF82A0D2D516A9E0020728E /* FirebaseCore in Frameworks */,
+				EF8D4EED2D5834E20099CF2C /* IMGLYEngine in Frameworks */,
 				EFF82A132D516A9E0020728E /* FirebaseStorage in Frameworks */,
+				EF8D4EE62D5824200099CF2C /* IMGLYDesignEditor in Frameworks */,
+				EF8D4EE82D5824200099CF2C /* IMGLYPhotoEditor in Frameworks */,
+				EF8D4EDC2D5818470099CF2C /* IMGLYUI in Frameworks */,
+				EF8D4EDA2D5818470099CF2C /* IMGLYCamera in Frameworks */,
 				EFF82A0B2D516A9E0020728E /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -149,6 +165,14 @@
 				EFF82A122D516A9E0020728E /* FirebaseStorage */,
 				EFF82A142D516A9E0020728E /* FirebaseVertexAI */,
 				EF73C20D2D532CB000D7264A /* VideoEditorSDK */,
+				EF8D4ED92D5818470099CF2C /* IMGLYCamera */,
+				EF8D4EDB2D5818470099CF2C /* IMGLYUI */,
+				EF8D4EDD2D5818470099CF2C /* IMGLYVideoEditor */,
+				EF8D4EE32D5824200099CF2C /* IMGLYApparelEditor */,
+				EF8D4EE52D5824200099CF2C /* IMGLYDesignEditor */,
+				EF8D4EE72D5824200099CF2C /* IMGLYPhotoEditor */,
+				EF8D4EE92D5824200099CF2C /* IMGLYPostcardEditor */,
+				EF8D4EEC2D5834E20099CF2C /* IMGLYEngine */,
 			);
 			productName = Blast;
 			productReference = EFF8291C2D51469A0020728E /* Blast.app */;
@@ -235,6 +259,8 @@
 			packageReferences = (
 				EFF82A092D516A9E0020728E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				EF73C20C2D532CB000D7264A /* XCRemoteSwiftPackageReference "vesdk-ios-build" */,
+				EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */,
+				EF8D4EEB2D5834E20099CF2C /* XCRemoteSwiftPackageReference "IMGLYEngine-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EFF8291D2D51469A0020728E /* Products */;
@@ -619,6 +645,22 @@
 				minimumVersion = 11.10.2;
 			};
 		};
+		EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/imgly/IMGLYUI-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.44.0;
+			};
+		};
+		EF8D4EEB2D5834E20099CF2C /* XCRemoteSwiftPackageReference "IMGLYEngine-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/imgly/IMGLYEngine-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.44.0;
+			};
+		};
 		EFF82A092D516A9E0020728E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -634,6 +676,46 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EF73C20C2D532CB000D7264A /* XCRemoteSwiftPackageReference "vesdk-ios-build" */;
 			productName = VideoEditorSDK;
+		};
+		EF8D4ED92D5818470099CF2C /* IMGLYCamera */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYCamera;
+		};
+		EF8D4EDB2D5818470099CF2C /* IMGLYUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYUI;
+		};
+		EF8D4EDD2D5818470099CF2C /* IMGLYVideoEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYVideoEditor;
+		};
+		EF8D4EE32D5824200099CF2C /* IMGLYApparelEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYApparelEditor;
+		};
+		EF8D4EE52D5824200099CF2C /* IMGLYDesignEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYDesignEditor;
+		};
+		EF8D4EE72D5824200099CF2C /* IMGLYPhotoEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYPhotoEditor;
+		};
+		EF8D4EE92D5824200099CF2C /* IMGLYPostcardEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4ED82D5818470099CF2C /* XCRemoteSwiftPackageReference "IMGLYUI-swift" */;
+			productName = IMGLYPostcardEditor;
+		};
+		EF8D4EEC2D5834E20099CF2C /* IMGLYEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF8D4EEB2D5834E20099CF2C /* XCRemoteSwiftPackageReference "IMGLYEngine-swift" */;
+			productName = IMGLYEngine;
 		};
 		EFF82A0A2D516A9E0020728E /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;

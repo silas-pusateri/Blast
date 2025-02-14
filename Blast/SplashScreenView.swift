@@ -57,11 +57,12 @@ struct ParticleEffect: View {
     
     private func removeOldParticles() {
         particles = particles.filter { $0.scale > 0.1 }.map { particle in
-            Particle(
+            let newScale = max(0.1, particle.scale * 0.95)  // Ensure scale never goes below 0.1
+            return Particle(
                 id: particle.id,
                 x: particle.x,
                 y: particle.y + 5,
-                scale: particle.scale * 0.95
+                scale: newScale
             )
         }
     }

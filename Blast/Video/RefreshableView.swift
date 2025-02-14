@@ -58,8 +58,8 @@ struct RefreshableView<Content: View>: View {
                 Image(systemName: "arrow.down")
                     .foregroundColor(.white)
                     .frame(height: 50)
-                    .opacity(Double(min(offset / threshold, 1.0)))
-                    .rotationEffect(.degrees(Double(min((offset / threshold) * 180, 180))))
+                    .opacity(Double(min(threshold > 0 ? offset / threshold : 0, 1.0)))
+                    .rotationEffect(.degrees(Double(min(threshold > 0 ? (offset / threshold) * 180 : 0, 180))))
             }
         }
     }

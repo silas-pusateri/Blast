@@ -46,3 +46,4 @@ Pods/
 **/keys.plist
 
 .vscode/settings.json
+Blast/Config.plist
