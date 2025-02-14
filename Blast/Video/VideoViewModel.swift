@@ -28,6 +28,9 @@ class VideoViewModel: ObservableObject {
             videos = []
             lastDocument = nil
             hasMoreVideos = true
+            
+            // Add a small delay to ensure server timestamp is set
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
         }
         
         // Don't fetch if we're already loading or there are no more videos

@@ -122,6 +122,27 @@ struct SuggestChangesView: View {
                             .foregroundColor(.red)
                             .padding(.horizontal)
                     }
+                    
+                    // Submit Button
+                    Button(action: submitChanges) {
+                        if isSubmitting || isUploading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Submit Changes")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(
+                        (description.isEmpty || isSubmitting || isUploading) ?
+                            Color.gray : Color.blue
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .disabled(description.isEmpty || isSubmitting || isUploading)
+                    .padding(.top, 20)
                 }
                 .padding(.vertical)
             }
@@ -132,13 +153,6 @@ struct SuggestChangesView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Submit") {
-                        submitChanges()
-                    }
-                    .disabled(description.isEmpty || isSubmitting || isUploading)
                 }
             }
             .overlay {
@@ -174,6 +188,8 @@ struct SuggestChangesView: View {
         Task {
             do {
                 try await uploadAndSubmit()
+                // Refresh the changes list
+                try await changesViewModel.fetchChanges(videoId: video.id)
                 await MainActor.run {
                     dismiss()
                 }

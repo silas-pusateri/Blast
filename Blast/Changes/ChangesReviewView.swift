@@ -22,27 +22,65 @@ struct ChangesReviewView: View {
         NavigationView {
             Group {
                 if changesViewModel.changes.isEmpty {
-                    ContentUnavailableView(
-                        "No Changes",
-                        systemImage: "pencil.slash",
-                        description: Text("No one has suggested any changes to this video yet.")
-                    )
+                    VStack {
+                        ContentUnavailableView(
+                            "No Changes",
+                            systemImage: "pencil.slash",
+                            description: Text("No one has suggested any changes to this video yet.")
+                        )
+                        
+                        if video.userId == Auth.auth().currentUser?.uid {
+                            Button(action: {
+                                showingSuggestChanges = true
+                            }) {
+                                Label("Suggest Changes", systemImage: "pencil")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, 20)
+                        }
+                    }
                 } else {
-                    List {
-                        ForEach(changesViewModel.changes) { change in
-                            ChangeRowView(
-                                change: change,
-                                isOwner: video.userId == Auth.auth().currentUser?.uid,
-                                onAccept: {
-                                    handleAccept(change)
-                                },
-                                onReject: {
-                                    handleReject(change)
-                                },
-                                onPreview: {
-                                    selectedChange = change
-                                    showingPreview = true
-                                }
+                    ZStack(alignment: .bottom) {
+                        List {
+                            ForEach(changesViewModel.changes) { change in
+                                ChangeRowView(
+                                    change: change,
+                                    isOwner: video.userId == Auth.auth().currentUser?.uid,
+                                    onAccept: {
+                                        handleAccept(change)
+                                    },
+                                    onReject: {
+                                        handleReject(change)
+                                    },
+                                    onPreview: {
+                                        selectedChange = change
+                                        showingPreview = true
+                                    }
+                                )
+                            }
+                        }
+                        
+                        if video.userId == Auth.auth().currentUser?.uid {
+                            Button(action: {
+                                showingSuggestChanges = true
+                            }) {
+                                Label("Suggest Changes", systemImage: "pencil")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 20)
+                            .background(
+                                Color(UIColor.systemBackground)
+                                    .shadow(radius: 5, y: -5)
                             )
                         }
                     }
@@ -51,13 +89,6 @@ struct ChangesReviewView: View {
             .navigationTitle("Suggested Changes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if video.userId == Auth.auth().currentUser?.uid {
-                        Button("Suggest Changes") {
-                            showingSuggestChanges = true
-                        }
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()

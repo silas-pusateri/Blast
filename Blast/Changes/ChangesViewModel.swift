@@ -133,8 +133,11 @@ class ChangesViewModel: ObservableObject {
                 ]
                 
                 // Add the new video document
-                try await db.collection("videos").addDocument(data: newVideoData)
-                print("📹 Created new video entry with edited URL")
+                let newDocRef = try await db.collection("videos").addDocument(data: newVideoData)
+                print("📹 Created new video entry with edited URL: \(newDocRef.documentID)")
+                
+                // Wait a moment for the server timestamp to be set
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
                 
                 // Refresh the video list to show the new entry
                 await videoViewModel.fetchVideos(isRefresh: true)
