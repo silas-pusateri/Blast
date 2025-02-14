@@ -25,29 +25,31 @@ struct VideoItemView: View {
     @State private var showingOptionsSheet = false
     
     var body: some View {
-        VideoView(video: video, videoViewModel: videoViewModel)
-            .frame(
-                width: geometry.size.width,
-                height: geometry.size.height
-            )
-            .id(index)
-            .onLongPressGesture {
-                showingOptionsSheet = true
-            }
-            .sheet(isPresented: $showingOptionsSheet) {
-                VideoOptionsSheet(
-                    video: video,
-                    videoViewModel: videoViewModel,
-                    showingDeleteConfirmation: $showingDeleteConfirmation,
-                    videoToDelete: $videoToDelete,
-                    showingLogoutConfirmation: $showingLogoutConfirmation,
-                    showingOptionsSheet: $showingOptionsSheet
+        ZStack(alignment: .topLeading) {
+            VideoView(video: video, videoViewModel: videoViewModel)
+                .frame(
+                    width: geometry.size.width,
+                    height: geometry.size.height
                 )
-                .presentationDetents([.height(250)])
-            }
-            .onAppear {
-                handleVideoAppearance()
-            }
+                .id(index)
+        }
+        .onLongPressGesture {
+            showingOptionsSheet = true
+        }
+        .sheet(isPresented: $showingOptionsSheet) {
+            VideoOptionsSheet(
+                video: video,
+                videoViewModel: videoViewModel,
+                showingDeleteConfirmation: $showingDeleteConfirmation,
+                videoToDelete: $videoToDelete,
+                showingLogoutConfirmation: $showingLogoutConfirmation,
+                showingOptionsSheet: $showingOptionsSheet
+            )
+            .presentationDetents([.height(250)])
+        }
+        .onAppear {
+            handleVideoAppearance()
+        }
     }
     
     private func handleVideoAppearance() {
@@ -81,16 +83,29 @@ struct VideoOptionsSheet: View {
     @State private var showingSuggestChanges = false
     @State private var showingChangesReview = false
     @State private var showingProfile = false
+    @State private var profileUserId: String?
     
     var body: some View {
         NavigationView {
             List {
+                // View video creator's profile
                 Button {
+                    profileUserId = video.userId
                     showingProfile = true
-                    showingOptionsSheet = false
                 } label: {
-                    Label("Profile", systemImage: "person.circle")
+                    Label("View Creator", systemImage: "person.circle")
                         .foregroundColor(.primary)
+                }
+                
+                // View current user's profile
+                if let currentUserId = Auth.auth().currentUser?.uid {
+                    Button {
+                        profileUserId = currentUserId
+                        showingProfile = true
+                    } label: {
+                        Label("My Profile", systemImage: "person.circle.fill")
+                            .foregroundColor(.primary)
+                    }
                 }
                 
                 // Only show Suggest Changes if not the video owner
@@ -126,9 +141,24 @@ struct VideoOptionsSheet: View {
                         }
                     }
                 }
+                
+                Button(role: .destructive) {
+                    showingLogoutConfirmation = true
+                    showingOptionsSheet = false
+                } label: {
+                    Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
+                        .foregroundColor(.red)
+                }
             }
             .navigationTitle("Video Options")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        showingOptionsSheet = false
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showingSuggestChanges) {
             SuggestChangesView(video: video, videoViewModel: videoViewModel)
@@ -137,7 +167,9 @@ struct VideoOptionsSheet: View {
             ChangesReviewView(video: video, videoViewModel: videoViewModel)
         }
         .sheet(isPresented: $showingProfile) {
-            ProfileView(userId: video.userId)
+            if let userId = profileUserId {
+                ProfileView(userId: userId)
+            }
         }
     }
 }
@@ -222,5 +254,21 @@ struct VideoScrollView: View {
             .scrollTargetBehavior(.paging)
             .scrollTargetLayout()
         }
+    }
+}
+
+// New struct for video tag
+struct VideoTag: View {
+    let isEdited: Bool
+    
+    var body: some View {
+        Text(isEdited ? "Edited Video" : "Original Video")
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(isEdited ? Color.blue.opacity(0.8) : Color.green.opacity(0.8))
+            .cornerRadius(4)
     }
 }

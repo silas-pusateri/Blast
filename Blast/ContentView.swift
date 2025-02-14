@@ -320,7 +320,6 @@ struct TopButtonsView: View {
     @Binding var isRefreshing: Bool
     @EnvironmentObject var videoViewModel: VideoViewModel
     @Binding var currentVideoIndex: Int
-    @State private var showingProfile = false
     
     var body: some View {
         HStack {
@@ -331,25 +330,10 @@ struct TopButtonsView: View {
             
             Spacer()
             
-            Button(action: { showingProfile = true }) {
-                Image(systemName: "person.circle")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
-            }
-            
             UploadButton(showingUploadView: $showingUploadView)
         }
         .padding(.top, 60)
         .padding(.horizontal, 16)
-        .sheet(isPresented: $showingProfile) {
-            if let userId = Auth.auth().currentUser?.uid {
-                ProfileView(userId: userId)
-            }
-        }
     }
 }
 

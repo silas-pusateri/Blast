@@ -62,7 +62,8 @@ class VideoViewModel: ObservableObject {
                     caption: data["caption"] as? String ?? "",
                     userId: data["userId"] as? String ?? "",
                     likes: data["likes"] as? Int ?? 0,
-                    comments: data["comments"] as? Int ?? 0
+                    comments: data["comments"] as? Int ?? 0,
+                    isEdited: data["isEdited"] as? Bool ?? false
                 )
             }
             
@@ -132,7 +133,8 @@ class VideoViewModel: ObservableObject {
                     caption: data["caption"] as? String ?? "",
                     userId: data["userId"] as? String ?? "",
                     likes: data["likes"] as? Int ?? 0,
-                    comments: data["comments"] as? Int ?? 0
+                    comments: data["comments"] as? Int ?? 0,
+                    isEdited: data["isEdited"] as? Bool ?? false
                 )
             }
             
@@ -197,7 +199,8 @@ class VideoViewModel: ObservableObject {
                 caption: videos[index].caption,
                 userId: videos[index].userId,
                 likes: videos[index].likes,
-                comments: videos[index].comments
+                comments: videos[index].comments,
+                isEdited: videos[index].isEdited
             )
             videos[index] = updatedVideo
             

@@ -314,6 +314,9 @@ struct VideoView: View {
                     
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 8) {
+                            VideoTag(isEdited: video.isEdited)
+                                .padding(.bottom, 4)
+                            
                             Text(username)
                                 .font(.headline)
                                 .foregroundColor(.white)
@@ -373,7 +376,7 @@ struct VideoView: View {
             loadVideo()
             fetchUsername()
         }
-        .onChange(of: isVisible) { newValue in
+        .onChange(of: isVisible) { oldValue, newValue in
             handleVisibilityChanged()
         }
         .sheet(isPresented: $isShowingComments) {
@@ -444,7 +447,8 @@ struct VideoView_Previews: PreviewProvider {
                 caption: "A beautiful sunset",
                 userId: "user1",
                 likes: 100,
-                comments: 50
+                comments: 50,
+                isEdited: false
             ),
             videoViewModel: VideoViewModel()
         )
@@ -513,10 +517,10 @@ class VideoPlayerController: NSObject, ObservableObject {
                     
                     self.isLoading = false
                 }
-            } catch {
-                print("Failed to load video: \(error.localizedDescription)")
+            } catch let setupError {
+                print("Failed to load video: \(setupError.localizedDescription)")
                 await MainActor.run {
-                    self.errorMessage = "Failed to load video: \(error.localizedDescription)"
+                    self.errorMessage = "Failed to load video: \(setupError.localizedDescription)"
                     self.isLoading = false
                 }
             }

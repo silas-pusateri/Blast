@@ -54,41 +54,76 @@ struct SuggestChangesView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Original Video")) {
-                    if let url = URL(string: video.url) {
-                        VideoPlayer(player: AVPlayer(url: url))
-                            .frame(height: 200)
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Original Video
+                    VStack(alignment: .leading) {
+                        Text("Original Video")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        
+                        if let url = URL(string: video.url) {
+                            VideoPlayer(player: AVPlayer(url: url))
+                                .aspectRatio(9/16, contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
                     }
-                }
-                
-                if let editedURL = editedVideoURL {
-                    Section(header: Text("Edited Preview")) {
-                        VideoPlayer(player: AVPlayer(url: editedURL))
-                            .frame(height: 200)
+                    
+                    // Edited Preview
+                    if let editedURL = editedVideoURL {
+                        VStack(alignment: .leading) {
+                            Text("Edited Preview")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            
+                            VideoPlayer(player: AVPlayer(url: editedURL))
+                                .aspectRatio(9/16, contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
                     }
-                }
-                
-                Section(header: Text("Change Description")) {
-                    TextEditor(text: $description)
-                        .frame(height: 100)
-                }
-                
-                Section {
+                    
+                    // Edit Video Button
                     Button(action: {
                         showingEditor = true
                     }) {
                         Label(editedVideoURL == nil ? "Edit Video" : "Edit Again", 
                               systemImage: editedVideoURL == nil ? "pencil" : "pencil.circle")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
                     }
-                }
-                
-                if let error = errorMessage {
-                    Section {
+                    .padding(.horizontal)
+                    
+                    // Change Description
+                    VStack(alignment: .leading) {
+                        Text("Change Description")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        
+                        TextEditor(text: $description)
+                            .frame(height: 100)
+                            .padding(8)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                    }
+                    
+                    if let error = errorMessage {
                         Text(error)
                             .foregroundColor(.red)
+                            .padding(.horizontal)
                     }
                 }
+                .padding(.vertical)
             }
             .navigationTitle("Suggest Changes")
             .navigationBarTitleDisplayMode(.inline)
