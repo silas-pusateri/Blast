@@ -175,6 +175,7 @@ struct SuggestChangesView: View {
                 self.editedVideoURL = url
                 self.editMetadata = metadata
             }
+            .interactiveDismissDisabled()
         }
     }
     

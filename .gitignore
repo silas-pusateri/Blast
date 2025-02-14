@@ -46,3 +46,6 @@ Pods/
 
 .vscode/settings.json
 Blast/Config.plist
+
+# Secrets file containing API keys
+Secrets.swift
